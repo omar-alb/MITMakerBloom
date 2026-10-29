@@ -176,7 +176,7 @@ class TwoFileTests(unittest.TestCase):
             self.assertEqual(measured[sensor.key], units[sensor.key], sensor.key)
         self.assertEqual(measured["temperature"], 22.0)  # 720 mV from a TMP36 is 22.0 °C
         self.assertEqual(measured["ph"], 7.85)  # 1450 mV, against a 1500 mV pH 7 buffer
-        self.assertIsNone(measured["nitrate"])  # not wired: missing, not zero
+        self.assertIsNone(measured["nitrate"])  # did not report: missing, not zero
         # The millivolts themselves are kept, in missions.db, for recalibrating later.
         with sqlite3.connect(config.MISSIONS_DATABASE) as db:
             self.assertEqual(json.loads(db.execute("SELECT millivolts FROM reading_details").fetchone()[0])["ph"], 1450.0)

@@ -7,20 +7,14 @@ The boat sends raw probe millivolts and its GPS state:
       "sample_id": "boat-3f9a1c0d7b2e-17",
       "age_seconds": 12.5,
       "hardware": "ok",
-      "millivolts": {"ph": 1450.0, "temperature": 720.0, "turbidity": 2600.0, "conductivity": 2100.0},
-      "gps": {"status": "fix", "latitude": 42.28084, "longitude": -83.74304}
+      "millivolts": {"ph": 1450.0, "temperature": 720.0, "turbidity": 2600.0, "conductivity": 2100.0,
+                     "nitrate": 1560.0, "ammonium": 1560.0},
+      "gps": {"status": "fix", "latitude": 42.36003, "longitude": -71.09413}
     }
 
-process() turns that into the row the database stores: every sensor in its
-unit (pH, °C, NTU, ...), the time the reading was taken, and its bloom risk
-from 0 to 100. The risk comes from the trained gradient-boosted tree model
-in Server/model/ when there is one (see model/README.md), and from the
-built-in rules otherwise.
-
-This is the only place a reading is scored. Alerts, map cells, hotspots, and
-the headline risk are all built from the stored risk (analysis.py), so none
-of them can disagree with it. A payload that cannot be used raises
-ReadingError, which the server answers with HTTP 400 and the reason.
+process() returns the row to store: each sensor in its unit, when it was
+taken, and its bloom risk (0-100) from the trained model in Server/model/ or,
+without one, the built-in rules. A bad payload raises ReadingError (HTTP 400).
 """
 
 import json
@@ -36,7 +30,6 @@ LOCATED_GPS_STATUSES = ("fix", "stale", "simulated")
 HARDWARE_STATUSES = ("ok", "partial", "simulated")
 COORDINATE_DIGITS = 6  # about 10 cm
 
-# Facts from the sensors' datasheets and standards, not settings.
 MV_PER_DEGREE = 10.0  # TMP36 and LM35 alike
 TMP36_ZERO_MV = 500.0  # the TMP36 reads 500 mV at 0 °C; the LM35 reads 0 mV
 PH_SCALE = (0.0, 14.0)
@@ -45,13 +38,13 @@ CONDUCTIVITY_REFERENCE_C = 25.0  # conductivity is reported as it would be at 25
 RULES_VERSION = "rules-v2"
 TOTAL_WEIGHT = sum(sensor.weight for sensor in config.SENSORS)
 
-# What a trained model can be given, by the names its model.json uses.
+# Inputs a model.json may list.
 FEATURES = (*(sensor.key for sensor in config.SENSORS), "latitude", "longitude", "hour", "day_of_year")
 MODEL_FORMATS = (".joblib", ".pkl")
 
 
 class ReadingError(ValueError):
-    """The payload cannot be stored. The message says why."""
+    """The payload cannot be stored."""
 
 
 def process(payload, now=None):
@@ -88,7 +81,7 @@ def process(payload, now=None):
 
 
 def _millivolts(raw):
-    """The known sensors' millivolts. Unknown names and non-numbers are skipped."""
+    """Known sensors' millivolts; unknown names and non-numbers are skipped."""
     if not isinstance(raw, dict):
         raise ReadingError('millivolts must be an object, like {"ph": 1450.0}.')
     values = {}
@@ -103,7 +96,7 @@ def _millivolts(raw):
 
 
 def _gps(raw):
-    """(status, latitude, longitude). Only a status with a position keeps one."""
+    """(status, latitude, longitude)."""
     if raw is None:
         return "unavailable", None, None
     if not isinstance(raw, dict) or raw.get("status") not in GPS_STATUSES:
@@ -122,7 +115,7 @@ def _coordinate(gps, key, limit):
 
 
 def _age(value):
-    """Seconds since the boat took the reading; 0 when unknown or implausible."""
+    """Seconds since the reading was taken; 0 when unknown or implausible."""
     number = _number(value)
     return number if number is not None and 0 <= number <= config.READING_MAX_AGE_SECONDS else 0
 
@@ -141,7 +134,7 @@ def _text(payload, key, required=False):
 
 
 def _number(value):
-    """A finite int or float, else None. (JSON allows NaN; the database must not.)"""
+    """A finite int or float, else None (JSON allows NaN)."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return float(value) if isfinite(value) else None
@@ -153,11 +146,7 @@ def _number(value):
 
 
 def to_units(millivolts):
-    """Every sensor's value in its unit, None for a probe that did not report.
-
-    Values are rounded to the sensor's `digits`, so what is stored is exactly
-    what the dashboard and the CSV show.
-    """
+    """Every sensor's value in its unit, rounded to its digits; None if it did not report."""
     temperature = _temperature(millivolts.get("temperature"))
     values = {
         "temperature": temperature,
@@ -199,8 +188,7 @@ def _ph(mv):
 def _turbidity(mv):
     if mv is None:
         return None
-    # Linear between clear water and the calibration standard; the probe's
-    # voltage falls as the water gets cloudier.
+    # Linear; the voltage falls as the water gets cloudier.
     share = (config.TURBIDITY_CLEAR_MV - mv) / (config.TURBIDITY_CLEAR_MV - config.TURBIDITY_DIRTY_MV)
     return _clamp(share, 0, 1) * config.TURBIDITY_DIRTY_NTU
 
@@ -208,19 +196,17 @@ def _turbidity(mv):
 def _conductivity(mv, temperature):
     if mv is None:
         return None
-    # Linear through the calibration point and beyond it, not capped there:
-    # brackish or runoff-laden water must still read higher than the standard.
+    # Linear, and not capped at the standard.
     share = (mv - config.CONDUCTIVITY_ZERO_MV) / (config.CONDUCTIVITY_CAL_MV - config.CONDUCTIVITY_ZERO_MV)
     water = CONDUCTIVITY_REFERENCE_C if temperature is None else temperature
     compensation = 1 + config.CONDUCTIVITY_PER_DEGREE * (water - CONDUCTIVITY_REFERENCE_C)
-    # (The floor only guards against dividing by nothing if the setting is far off.)
     return max(0.0, share * config.CONDUCTIVITY_CAL_US_CM / max(compensation, 0.1))
 
 
 def _ion_selective(mv, reference_mv, reference_mg_l, mv_per_decade):
     if mv is None:
         return None
-    # Nernst: every mv_per_decade of change is a tenfold change in concentration.
+    # Nernst: every mv_per_decade is a tenfold change.
     limit = config.ION_SELECTIVE_MAX_DECADES
     decades = _clamp((mv - reference_mv) / mv_per_decade, -limit, limit)
     return _clamp(reference_mg_l * 10**decades, 0, config.ION_SELECTIVE_MAX_MG_L)
@@ -236,18 +222,12 @@ def _clamp(value, low, high):
 
 
 def score(reading):
-    """The bloom risk of one reading: the trained model's when one is loaded, else the rules'.
-
-    `reading` is a row as process() builds it. Returns the risk (0-100),
-    confidence (0-100), drivers (what pushed the risk up, strongest first;
-    only the rules name them), and scored_by (which model produced it).
-    """
+    """{risk, confidence, drivers, scored_by} from the loaded model, else the rules."""
     if _model is not None:
         try:
             probability = _as_probability(_model["run"](_features(reading, _model["features"])))
         except Exception as error:
-            # One bad reading must not stop data collection: the rules score
-            # it instead, and the row records that they did.
+            # The rules score this one instead; scored_by records it.
             _model_failed(error)
         else:
             return {
@@ -260,14 +240,10 @@ def score(reading):
 
 
 def score_with_rules(reading):
-    """The built-in score: a weighted average of how risky each probe looks.
+    """Weighted average of each probe's 0-100 ramp between its low and high.
 
-    Each sensor with a value scores 0 at or below its `low` threshold, 100 at
-    or above its `high`, and in proportion between. Sensors without a value
-    are left out rather than counted as clean water. The average is then
-    scaled down when the probes that did report carry less than
-    FULL_EVIDENCE_SHARE of the total weight, so one elevated probe on its own
-    stays below the alert levels.
+    Missing probes are left out, and the result is scaled down when the ones
+    that reported carry less than FULL_EVIDENCE_SHARE of the weight.
     """
     parts = {}
     for sensor in config.SENSORS:
@@ -293,11 +269,7 @@ def score_with_rules(reading):
 
 
 def confidence(reading):
-    """How much evidence is behind a score, within config.CONFIDENCE_RANGE (30 to 90).
-
-    It grows with the share of the scoring weight that actually reported, and
-    stops short of 100 because even a full set of probes gives an estimate.
-    """
+    """Share of the scoring weight that reported, mapped onto CONFIDENCE_RANGE."""
     lowest, highest = config.CONFIDENCE_RANGE
     reported = sum(sensor.weight for sensor in config.SENSORS if reading.get(sensor.key) is not None)
     return round(lowest + (highest - lowest) * reported / TOTAL_WEIGHT)
@@ -313,17 +285,12 @@ def _ramp(value, low, high):
 # A trained gradient-boosted tree model (Server/model/, see model/README.md)
 # ---------------------------------------------------------------------------
 
-_model = None  # while a trained model is scoring: {"run", "file", "version", "features"}
+_model = None  # {"run", "file", "version", "features"} while a model is loaded
 _status = {}
 
 
 def load_model():
-    """Score with the trained model in Server/model/ when there is one, else with the rules.
-
-    Runs at startup and on POST /model/reload. Never raises: a model that
-    cannot be loaded, or fails on a typical reading, is reported in the log
-    and on GET /model, and the rules keep scoring.
-    """
+    """Load Server/model/, or fall back to the rules. Never raises; problems show on GET /model."""
     global _model, _status
     _model = None
     description = config.MODEL_DIR / "model.json"
@@ -334,8 +301,6 @@ def load_model():
     try:
         spec = _read_description(description)
         run = _load(config.MODEL_DIR / spec["file"], spec["features"])
-        # Try it on a typical reading now, so a broken model shows up at
-        # startup rather than on the first reading in the field.
         _as_probability(run(_features(_typical_reading(), spec["features"])))
     except Exception as error:
         _status = {
@@ -352,7 +317,7 @@ def load_model():
 
 
 def model_status():
-    """Which model is scoring new readings, and why. Shown on GET /model."""
+    """Which model is scoring, and why (GET /model)."""
     status = {"model": _model is not None, "scoredBy": _model["version"] if _model else RULES_VERSION, **_status}
     if _model:
         status["features"] = _model["features"]
@@ -360,7 +325,7 @@ def model_status():
 
 
 def _read_description(path):
-    """model.json, checked: the model's file and its inputs, in training order."""
+    """model.json, checked."""
     try:
         spec = json.loads(path.read_text(encoding="utf-8"))
     except ValueError as error:
@@ -380,12 +345,7 @@ def _read_description(path):
 
 
 def _load(path, features):
-    """The model as a function: one row of inputs in, the probability of a bloom out.
-
-    The file is a classifier saved with joblib (or pickle): XGBClassifier,
-    LGBMClassifier, or scikit-learn's HistGradientBoostingClassifier. Missing
-    inputs are NaN, which gradient-boosted trees handle by themselves.
-    """
+    """The model as a function: one row of inputs in, the probability of a bloom out."""
     if not path.exists():
         raise FileNotFoundError("{} is not in Server/model/".format(path.name))
     if path.suffix == ".joblib":
@@ -398,8 +358,7 @@ def _load(path, features):
 
     names = getattr(model, "feature_names_in_", None)
     if names is not None:
-        # Trained on a table with named columns: check they are the inputs
-        # model.json lists, in the same order, and give it a table back.
+        # Trained on named columns: they must match model.json, in order.
         import pandas
 
         names = [str(name) for name in names]
@@ -428,18 +387,18 @@ def _load(path, features):
 
 
 def _features(reading, names):
-    """The model's inputs for one reading. A missing value (no probe, no GPS fix) is NaN."""
+    """The model's inputs for one reading; missing values are NaN."""
     taken = datetime.fromisoformat(reading["taken_at"])
     known = {
         **{name: reading.get(name) for name in FEATURES},
-        "hour": taken.hour + taken.minute / 60,  # local time of day, 0-24
+        "hour": taken.hour + taken.minute / 60,
         "day_of_year": taken.timetuple().tm_yday,
     }
     return [float("nan") if known[name] is None else float(known[name]) for name in names]
 
 
 def _as_probability(value):
-    """A model's answer as a float from 0 to 1. Anything else is an error."""
+    """A model's answer as a float from 0 to 1, else an error."""
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -457,7 +416,7 @@ def _model_failed(error):
 
 
 def _typical_reading():
-    """config.MODEL_TRIAL_READING, shaped exactly like a real row, to try a model on as it loads."""
+    """config.MODEL_TRIAL_READING shaped like a real row."""
     return {
         **{sensor.key: config.MODEL_TRIAL_READING.get(sensor.key) for sensor in config.SENSORS},
         "latitude": config.MAP_CENTER[0],

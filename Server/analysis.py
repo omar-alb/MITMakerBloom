@@ -1,32 +1,17 @@
-"""What the stored readings add up to: risk levels, alerts, map cells, hotspots, and the headline.
-
-Nothing here scores a reading. Each reading's risk was worked out once, when
-it arrived (processing.py), and everything here is built from those stored
-risks, so a marker, its cell, an alert, a hotspot, and the headline can never
-disagree.
-
-    level(risk), is_alert(risk), rollup(risks)    a risk read against config.RISK_LEVELS
-    alerts_for(reading)                           the alerts a new reading raises; stored with it
-    overview(readings, ...)                       a mission's cells, hotspots, headline, and boat status
-"""
+"""Risk levels, alerts, map cells, hotspots, and the headline, all built from stored risks."""
 
 from datetime import datetime
 from math import asin, cos, floor, radians, sin, sqrt
 
 import config
 
-# Facts about the Earth, not settings (those are in config.py).
 METERS_PER_DEGREE_LATITUDE = 111_320.0
 EARTH_RADIUS_METERS = 6_371_000.0
-MAX_GRID_LATITUDE = 85.0  # cells are sized by cos(latitude), which reaches zero at the poles
+MAX_GRID_LATITUDE = 85.0  # cos(latitude) reaches zero at the poles
 
 
 def overview(readings, grid_latitude, now=None):
-    """Everything a mission's readings add up to, as the dashboard shows it.
-
-    `readings` are the mission's readings, oldest first; `grid_latitude` sizes
-    its map cells.
-    """
+    """A mission's cells, hotspots, headline, and boat status. `readings` are oldest first."""
     now = now or datetime.now().astimezone()
     cells = build_cells(readings, grid_latitude)
     hotspots = build_hotspots(readings, now)
@@ -44,21 +29,17 @@ def overview(readings, grid_latitude, now=None):
 
 
 def level(risk):
-    """The risk level a score falls on: "Low", "Moderate", "High", or "Severe"."""
+    """The level label a score falls on."""
     return _rung(risk)["label"]
 
 
 def is_alert(risk):
-    """True when a score is at one of the alert levels (High or Severe)."""
+    """True at an alert level."""
     return level(risk) in config.ALERT_LEVELS
 
 
 def rollup(risks):
-    """One score for a group: the mean of the scores blended with the peak.
-
-    So one hot reading is neither averaged away nor allowed to speak for its
-    whole area. A cell rolls up its readings; the headline rolls up the cells.
-    """
+    """One score for a group: the mean pulled ROLLUP_PEAK_SHARE toward the peak."""
     risks = list(risks)
     if not risks:
         return 0
@@ -67,11 +48,7 @@ def rollup(risks):
 
 
 def _rung(risk):
-    """The config.RISK_LEVELS rung a score falls on.
-
-    The score is rounded first, exactly as it is shown, so 50.4 is Moderate
-    everywhere rather than Moderate in one place and High in another.
-    """
+    """The RISK_LEVELS rung a score falls on, rounded first as it is shown."""
     value = round(min(100, max(0, risk)))
     found = config.RISK_LEVELS[0]
     for rung in config.RISK_LEVELS:
@@ -86,13 +63,8 @@ def _rung(risk):
 
 
 def alerts_for(reading):
-    """The alerts a new reading raises, each as {kind, level, title, message}.
-
-    A bloom alert fires when the reading's risk is at an alert level, and
-    quotes that risk, so an alert and the marker that raised it always agree.
-    A sensor alert fires when a sensor with an `alert_at` threshold reaches
-    it. Alerts are stored with their reading and stay until acknowledged.
-    """
+    """The alerts a new reading raises: a bloom alert at an alert level, and a
+    sensor alert for each sensor at or above its alert_at."""
     alerts = []
     if is_alert(reading["risk"]):
         rung = _rung(reading["risk"])
@@ -134,12 +106,7 @@ def _and_list(items):
 
 
 def build_cells(readings, grid_latitude):
-    """A cell for every square that holds at least one located reading.
-
-    Cells are CELL_SIZE_METERS on a side, sized for the latitude of the
-    mission's first GPS fix so they stay square wherever the boat is
-    launched. A cell's risk is the roll-up of the readings inside it.
-    """
+    """A cell for every square holding a located reading, sized for grid_latitude."""
     members = {}
     for reading in readings:
         if reading["latitude"] is not None:
@@ -205,13 +172,7 @@ def _meters_per_degree_longitude(latitude):
 
 
 def build_hotspots(readings, now):
-    """Clusters of alert-level readings, the one most worth revisiting first.
-
-    Located readings at an alert level that lie within HOTSPOT_JOIN_METERS of
-    a hotspot's centre join it. Riskier, less certain, farther from the boat,
-    and longer since it was sampled all push a hotspot's revisit priority up;
-    the first REVISIT_TARGETS are numbered on the map.
-    """
+    """Clusters of located alert-level readings, highest revisit priority first."""
     clusters = []
     for reading in readings:
         if reading["latitude"] is None or not is_alert(reading["risk"]):
@@ -280,12 +241,7 @@ def _hotspot(cluster, boat, now):
 
 
 def _summary(readings, cells, hotspots):
-    """The headline risk, and what it was rolled up from.
-
-    With located readings it is the roll-up of the cells on the map, so it
-    cannot disagree with the map. Without any GPS fix it rolls up the
-    readings themselves.
-    """
+    """The headline: the roll-up of the cells, or of the readings when none are located."""
     if cells:
         basis, risks = "cells", [cell["risk"] for cell in cells]
     elif readings:
@@ -309,7 +265,7 @@ def _summary(readings, cells, hotspots):
 
 
 def _boat(latest, now):
-    """Online while the boat was heard from within BOAT_OFFLINE_AFTER_SECONDS."""
+    """Boat status; online if heard from within BOAT_OFFLINE_AFTER_SECONDS."""
     if latest is None:
         return {"online": False, "lastHeard": None, "gps": None, "hardware": None}
     silent_for = (now - datetime.fromisoformat(latest["received_at"])).total_seconds()

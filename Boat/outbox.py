@@ -1,9 +1,4 @@
-"""The outbox: readings saved on flash until the server has them.
-
-One JSON reading per line, oldest first. Every reading goes in here before it
-is sent, so nothing is lost while the server is out of range, and the outbox
-is emptied oldest-first whenever Wi-Fi allows.
-"""
+"""Readings saved on flash until the server has them: one JSON reading per line, oldest first."""
 import json
 import os
 import time
@@ -12,14 +7,11 @@ import config
 
 # What happened when one reading was sent.
 SENT = "sent"
-REJECTED = "rejected"  # the server refused it, so sending it again cannot help
-FAILED = "failed"  # network or server trouble: keep it and try again later
+REJECTED = "rejected"  # refused by the server: drop it
+FAILED = "failed"  # network or server trouble: keep it for later
 
-# Copying the outbox file goes this many bytes at a time: it can be far
-# larger than free RAM.
-COPY_CHUNK_BYTES = 1024
+COPY_CHUNK_BYTES = 1024  # the file can be larger than free RAM
 
-# MicroPython's millisecond clock, with a stand-in for desktop Python.
 ticks_ms = getattr(time, "ticks_ms", lambda: int(time.time() * 1000))
 ticks_diff = getattr(time, "ticks_diff", lambda end, start: end - start)
 
@@ -40,14 +32,10 @@ def add(reading):
 
 
 def send_all(send, budget_ms=None):
-    """Send waiting readings oldest-first with send(reading). True once empty.
+    """Send waiting readings oldest-first. True once the outbox is empty.
 
-    Stops at the first FAILED, because the server is unreachable and the rest
-    would fail too. With a budget it also stops once that much time has
-    passed, so a long backlog cannot delay the next reading; the rest go next
-    time. A REJECTED reading is removed like a sent one, or it would block
-    everything behind it forever. The file is only rewritten after progress,
-    never after a failed attempt, to spare the flash.
+    Stops at the first FAILED, or once budget_ms has passed. REJECTED readings
+    are removed like sent ones so they can't block the rest.
     """
     started = ticks_ms()
     sent = 0
@@ -81,7 +69,7 @@ def send_all(send, budget_ms=None):
 
 
 def count():
-    """How many readings are waiting. Handy from the REPL: outbox.count()"""
+    """How many readings are waiting (handy from the REPL)."""
     total = 0
     try:
         with open(config.OUTBOX_FILE, "r") as outbox:
@@ -94,12 +82,10 @@ def count():
 
 
 def recover():
-    """Finish or undo a rewrite that a power cut interrupted. Run at boot.
+    """At boot: finish or undo a rewrite a power cut interrupted.
 
-    A rewrite writes a copy, deletes the outbox, then renames the copy into
-    place. With the outbox gone and the copy present, the cut came between
-    the last two steps and the copy is the outbox. With both present, the
-    outbox is still whole and the copy may be partial.
+    Copy present without the outbox: the copy is the outbox. Both present:
+    the outbox is whole and the copy may be partial.
     """
     if not _exists(_copy_file()):
         return
@@ -165,8 +151,7 @@ def _drop_oldest(count):
 
 
 def _replace(source, destination):
-    # FAT cannot rename over an existing file, so remove it first; recover()
-    # covers a power cut between the two steps.
+    # FAT can't rename over a file; recover() covers a power cut in between.
     _remove(destination)
     try:
         os.rename(source, destination)

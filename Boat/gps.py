@@ -2,13 +2,10 @@
 
 read_position() returns {"status", "latitude", "longitude"}:
 
-    fix          a sentence with a satellite lock arrived just now
-    stale        no lock right now, so the last fix (under a minute old) is reused
-    no_fix       the GPS is talking but has no lock; no position is sent
-    unavailable  there is no working GPS (pins not set, or the UART failed)
-
-Without a position the server still records the water chemistry, it just
-does not put the reading on the map.
+    fix          a locked sentence arrived just now
+    stale        no lock, so the last fix (under GPS_STALE_LIMIT_SECONDS old) is reused
+    no_fix       no lock; no position
+    unavailable  no working GPS (pins not set, or the UART failed)
 """
 import time
 
@@ -19,17 +16,11 @@ try:
 except ImportError:  # desktop Python, for tests
     UART = Pin = None
 
-# MicroPython's millisecond clock, with a stand-in for desktop Python.
 ticks_ms = getattr(time, "ticks_ms", lambda: int(time.time() * 1000))
 ticks_diff = getattr(time, "ticks_diff", lambda end, start: end - start)
 
-# NMEA caps a sentence at 82 characters. Past this with no line ending, what
-# has built up is noise (or the wrong baud rate) and is thrown away.
-MAX_LINE_BYTES = 200
-
-# While waiting for a sentence, check the UART this often.
+MAX_LINE_BYTES = 200  # NMEA lines are at most 82; longer is noise or a wrong baud rate
 POLL_PAUSE_SECONDS = 0.05
-# Emptying stale data stops after this many reads: the receiver keeps talking meanwhile.
 DISCARD_READS = 8
 
 _uart = None
@@ -54,8 +45,7 @@ def read_position():
         print("GPS UART could not be opened:", error)
         return _no_position("unavailable")
 
-    # Whatever sits in the buffer arrived just after the previous reading,
-    # seconds ago. Throw it away and wait for the receiver's next sentences.
+    # Drop what was buffered since the last reading; it is seconds old.
     _discard_buffered(uart)
     started = ticks_ms()
     while ticks_diff(ticks_ms(), started) < config.GPS_READ_TIMEOUT_MS:
@@ -68,8 +58,6 @@ def read_position():
             _last_fix, _last_fix_ms = position, ticks_ms()
             return _position("fix", position)
 
-    # A short dropout reuses the last fix. A long one does not: the boat has
-    # moved on, and every reading would be mapped at the old spot.
     if _last_fix is not None:
         age_ms = ticks_diff(ticks_ms(), _last_fix_ms)
         if 0 <= age_ms < config.GPS_STALE_LIMIT_SECONDS * 1000:
@@ -78,12 +66,9 @@ def read_position():
 
 
 def parse_sentence(line):
-    """(latitude, longitude) from a GGA or RMC sentence that reports a lock.
+    """(latitude, longitude) from a locked GGA or RMC sentence, else None.
 
-    Anything else - another sentence type, a bad checksum, no lock, or
-    coordinates that are malformed or out of range - gives None. A receiver
-    without a lock can still repeat its last known position, so the lock
-    flag matters as much as the coordinates.
+    The lock flag matters: an unlocked receiver can still repeat its last position.
     """
     if not line.startswith("$") or not _checksum_ok(line):
         return None
@@ -103,12 +88,7 @@ def parse_sentence(line):
 
 
 def _checksum_ok(line):
-    """True when the sentence ends in *hh, the XOR of everything between $ and *.
-
-    Noise on the UART can change a digit inside a coordinate and still leave a
-    believable position; this is what catches it. A line cut off before its
-    checksum fails too.
-    """
+    """True when the line ends in *hh, the XOR of everything between $ and *."""
     star = line.rfind("*")
     if star < 1 or len(line) < star + 3:
         return False
@@ -143,7 +123,7 @@ def _coordinate(value, hemisphere):
 def _open_uart():
     global _uart
     if _uart is None:
-        # timeout=0 keeps read() non-blocking: it returns whatever has arrived.
+        # timeout=0: read() returns whatever has arrived without waiting.
         _uart = UART(
             config.GPS_UART_ID,
             baudrate=config.GPS_BAUD,
@@ -166,13 +146,7 @@ def _discard_buffered(uart):
 
 
 def _next_line(uart):
-    """The next complete line, or None until one has arrived.
-
-    A UART read returns whatever has come in so far, which often ends in the
-    middle of a sentence, so the start is kept until the rest arrives. A line
-    that is not valid text comes back as "" (MicroPython's decode() has no
-    "ignore" mode), which parse_sentence() rejects.
-    """
+    """The next complete line, or None until one has arrived. Undecodable lines come back as ""."""
     global _buffer
     newline = _buffer.find(b"\n")
     if newline < 0:

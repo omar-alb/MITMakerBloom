@@ -94,9 +94,9 @@ class ReadingTests(unittest.TestCase):
         self.assertTrue(0 <= row["risk"] <= 100)
         self.assertEqual(row["scored_by"], "rules-v2")
 
-    def test_unwired_and_unknown_probes_turn_into_nothing(self):
-        # The 0x4A board has nothing on it yet, so nutrients must stay empty
-        # rather than be invented; a name the server does not know is ignored.
+    def test_probes_that_did_not_report_and_unknown_probes_turn_into_nothing(self):
+        # A probe that did not report stays empty rather than be invented; a
+        # name the server does not know is ignored.
         row = process(millivolts={"ph": 1450.0, "dissolved_gold": 3.0})
         self.assertIsNone(row["nitrate"])
         self.assertNotIn("dissolved_gold", row["millivolts"])
@@ -188,14 +188,15 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(analysis.level(backed_up["risk"]), "Severe")
         self.assertLess(alone["confidence"], backed_up["confidence"])
 
-    def test_the_four_wired_probes_count_as_full_evidence(self):
-        wired = sum(sensor.weight for sensor in config.SENSORS if sensor.key in ("temperature", "ph", "turbidity", "conductivity"))
-        self.assertGreaterEqual(wired, config.FULL_EVIDENCE_SHARE)
+    def test_the_four_core_probes_alone_count_as_full_evidence(self):
+        # With both nutrient electrodes down, the rest still score in full.
+        core = sum(sensor.weight for sensor in config.SENSORS if sensor.key in ("temperature", "ph", "turbidity", "conductivity"))
+        self.assertGreaterEqual(core, config.FULL_EVIDENCE_SHARE)
         everything_high = reading(temperature=40.0, ph=10.0, turbidity=50.0, conductivity=2000.0)
         self.assertEqual(processing.score_with_rules(everything_high)["risk"], 100)
 
     def test_a_missing_probe_is_left_out_not_counted_as_clean(self):
-        # The unwired nutrient probes must not drag the risk down as if they
+        # Probes that did not report must not drag the risk down as if they
         # had measured clean water; a measured clean value does.
         high = reading(temperature=40.0, ph=10.0, turbidity=50.0, conductivity=2000.0)
         self.assertEqual(processing.score_with_rules(high)["risk"], 100)

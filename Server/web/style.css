@@ -25,9 +25,7 @@
     --status-warn: #d0a44c;
     --status-bad: #c85a55;
 
-    /* Readable text and tint shades for the risk badges. The risk colours
-       themselves (map, legend, alert borders) come from the server's
-       RISK_LEVELS in Server/config.py. */
+    /* Risk badge text and tints (the risk colours come from RISK_LEVELS). */
     --low-text: #2d6e41;
     --moderate-text: #7d5800;
     --high-text: #9e4816;
@@ -351,8 +349,7 @@ input[type="range"] {
     background: var(--panel-alt);
 }
 
-/* Its own stacking context, so Leaflet's internal z-indexes (up to 1000)
-   stay beneath the layer panel and the fit button drawn over the map. */
+/* Keeps Leaflet's z-indexes under the controls drawn over the map. */
 #map {
     position: absolute;
     inset: 0;
@@ -377,8 +374,7 @@ input[type="range"] {
     border-color: var(--muted);
 }
 
-/* The metre grid under the mission's layers (no street map is drawn). The
-   colours are CSS so they follow light and dark mode. */
+/* The metre grid. */
 .leaflet-container path.map-grid-line {
     stroke: var(--grid-line);
 }
@@ -721,7 +717,7 @@ input[type="range"] {
 
 /* ----------------------------------------------------------------- alerts */
 
-/* Paged by dashboard.js (ALERT_PAGE_SIZE), so the list never scrolls inside itself. */
+/* Paged, so the list never scrolls inside itself. */
 .alert-list {
     display: grid;
     gap: 8px;
@@ -741,7 +737,7 @@ input[type="range"] {
     background: var(--panel-alt);
 }
 
-/* Each alert's border colour is its risk level's, set inline by dashboard.js. */
+/* Border colour is set inline by dashboard.js. */
 .alert-list li.is-acknowledged { opacity: 0.65; }
 
 .alert-list li.empty {
@@ -987,8 +983,7 @@ table.readings-table tbody tr.is-selected {
         flex: 1;
     }
 
-    /* The table becomes a stack of cards: time and risk on top, readings in
-       three columns with their units, position last. */
+    /* The table becomes cards. */
     table.readings-table thead {
         display: none;
     }
@@ -1069,8 +1064,7 @@ table.readings-table tbody tr.is-selected {
     }
 }
 
-/* Touch screens: bigger targets, and 16px inputs so iOS does not zoom the
-   page every time a field gets focus. */
+/* Touch screens: bigger targets; 16px inputs stop iOS zooming on focus. */
 @media (pointer: coarse) {
     button,
     input[type="search"],

@@ -22,10 +22,12 @@ class ConfigTests(unittest.TestCase):
             "SIMULATE_HARDWARE must ship False, or invented readings get recorded as field data.",
         )
 
-    def test_only_the_wired_probes_are_listed(self):
-        # An unconnected input floats, and the server would turn the noise
-        # into a real-looking nutrient reading and raise alerts on it.
-        self.assertEqual(set(config.PROBES), {"ph", "temperature", "turbidity", "conductivity"})
+    def test_all_six_wired_probes_are_listed(self):
+        # Only connected probes may be listed: an unconnected input floats,
+        # and the server would turn the noise into a real-looking reading.
+        self.assertEqual(
+            set(config.PROBES), {"ph", "temperature", "turbidity", "conductivity", "nitrate", "ammonium"}
+        )
 
     def test_every_probe_is_on_its_own_input_of_a_configured_board(self):
         inputs = list(config.PROBES.values())
@@ -46,9 +48,12 @@ class ProbeTests(unittest.TestCase):
         sensors._boards = [mock.Mock(read_volts=reader) for reader in readers]
 
     def test_every_wired_probe_is_read_in_millivolts(self):
-        self.boards(lambda channel: 1.0 + channel / 10, lambda channel: 9.9)
+        self.boards(lambda channel: 1.0 + channel / 10, lambda channel: 2.0 + channel / 10)
         millivolts, hardware = sensors.read_probes()
-        self.assertEqual(millivolts, {"ph": 1000.0, "temperature": 1100.0, "turbidity": 1200.0, "conductivity": 1300.0})
+        self.assertEqual(millivolts, {
+            "ph": 1000.0, "temperature": 1100.0, "turbidity": 1200.0, "conductivity": 1300.0,
+            "nitrate": 2000.0, "ammonium": 2100.0,
+        })
         self.assertEqual(hardware, "ok")
 
     def test_a_probe_that_does_not_answer_is_left_out_not_the_whole_reading(self):
@@ -57,10 +62,10 @@ class ProbeTests(unittest.TestCase):
                 raise OSError("I2C error")
             return 1.5
 
-        self.boards(flaky, flaky)
+        self.boards(flaky, lambda channel: 1.5)
         millivolts, hardware = sensors.read_probes()
         self.assertNotIn("turbidity", millivolts)
-        self.assertEqual(len(millivolts), 3)
+        self.assertEqual(len(millivolts), 5)
         self.assertEqual(hardware, "partial")
         self.assertIsNone(sensors._boards, "the bus is reopened next time")
 

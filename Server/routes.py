@@ -1,6 +1,4 @@
-"""Every URL the boat and the dashboard use, and exactly what each one answers.
-
-app.py starts the server; this file only answers requests.
+"""Every URL the boat and the dashboard use.
 
     GET  /config.js                       the dashboard's settings, from config.py
     POST /readings                        the boat sends one reading
@@ -17,8 +15,7 @@ app.py starts the server; this file only answers requests.
     POST /model/reload                    load the model in Server/model/ again
     POST /shutdown                        stop the server (and the Wi-Fi network with it)
 
-Errors come back as JSON: {"error": "what went wrong"}. Answers carry plain
-values (numbers, ISO 8601 times); the browser formats them.
+Errors are JSON: {"error": "..."}.
 """
 
 import csv
@@ -48,7 +45,7 @@ def page():
 
 @app.route("/config.js")
 def dashboard_settings():
-    """The dashboard's settings from config.py. The page loads this before dashboard.js."""
+    """The dashboard's settings from config.py."""
     settings = {
         "pollSeconds": config.DASHBOARD_POLL_SECONDS,
         "timeoutSeconds": config.DASHBOARD_TIMEOUT_SECONDS,
@@ -66,17 +63,13 @@ def dashboard_settings():
     return Response(
         "window.BLOOM_SETTINGS = {};\n".format(json.dumps(settings)),
         mimetype="text/javascript",
-        headers={"Cache-Control": "no-cache"},  # a changed setting shows on the next reload
+        headers={"Cache-Control": "no-cache"},
     )
 
 
 @app.route("/readings", methods=["POST"])
 def post_reading():
-    """Process one reading from the boat, and store it with the alerts it raises.
-
-    A resent reading (same sample_id) is answered 200 like a new one, so the
-    boat stops resending it, but is not stored twice.
-    """
+    """Store one reading with its alerts. A resent sample_id gets 200 but isn't stored twice."""
     try:
         row = processing.process(request.get_json(silent=True))
     except processing.ReadingError as error:
@@ -100,7 +93,7 @@ def get_dashboard(mission_id=None):
     return jsonify(dashboard_document(
         mission,
         database.mission_readings(mission["id"]),
-        # An ended mission is a record, so it shows acknowledged alerts too.
+        # An ended mission shows acknowledged alerts too.
         alerts=database.mission_alerts(mission["id"], include_acknowledged=mission["ended_at"] is not None),
         reading_count=database.count_readings(mission["id"]),
     ))
@@ -151,11 +144,7 @@ def get_readings_csv(mission_id):
 
 @app.route("/missions/<int:mission_id>/replay/<int:reading_id>")
 def get_replay(mission_id, reading_id):
-    """The cells, hotspots, headline, and alerts as they stood when one reading arrived.
-
-    Replay steps through a mission asking for this at each reading, so it can
-    draw everything as it was then, worked out here like the live view.
-    """
+    """The cells, hotspots, headline, and alerts as they stood when one reading arrived."""
     mission = database.get_mission(mission_id)
     if mission is None:
         return _error(404, "There is no mission {}.".format(mission_id))
@@ -204,15 +193,13 @@ def post_model_reload():
 
 @app.route("/shutdown", methods=["POST"])
 def post_shutdown():
-    # SIGTERM after a moment, so this answer reaches the browser first. app.py
-    # turns it into a clean exit that also takes the Wi-Fi network down.
+    # app.py turns SIGTERM into a clean exit that takes the Wi-Fi down.
     threading.Timer(config.SHUTDOWN_DELAY_SECONDS, os.kill, (os.getpid(), signal.SIGTERM)).start()
     return jsonify({"status": "shutting down"}), 202
 
 
 @app.errorhandler(HTTPException)
 def http_error(error):
-    # The boat and the dashboard both expect JSON, never an HTML error page.
     return _error(error.code, error.description)
 
 
@@ -232,19 +219,12 @@ def _error(status, message):
 
 
 def dashboard_document(mission, readings, alerts=(), reading_count=None, now=None):
-    """Everything the dashboard shows for one mission.
-
-    `readings` are the mission's readings, oldest first; `alerts` come from
-    database.mission_alerts(). Cells, hotspots, and the headline cover
-    every reading, but only the newest DASHBOARD_READINGS are sent for the
-    markers, the table, and replay.
-    """
+    """Everything the dashboard shows for one mission. `readings` are oldest first."""
     grid_latitude = mission["grid_latitude"] if mission else None
     model = processing.model_status()
     return {
         "mission": _mission_json(mission, len(readings) if reading_count is None else reading_count),
         "mapCenter": {"lat": config.MAP_CENTER[0], "lng": config.MAP_CENTER[1]},
-        # The background grid lines up with the cells: same size, same latitude.
         "grid": {"steps": list(config.MAP_GRID_METERS), "cellSize": config.CELL_SIZE_METERS, "latitude": grid_latitude},
         "riskLevels": [{"label": rung["label"], "min": rung["min"], "color": rung["color"]} for rung in config.RISK_LEVELS],
         "sensors": [
@@ -310,12 +290,7 @@ def _alert_json(alert):
 
 
 def csv_lines(mission, readings, cell_readings):
-    """A mission's readings as CSV text, a line at a time, header first.
-
-    `readings` can be a generator (database.each_reading), so a long mission
-    streams out without being held in memory. `cell_readings` is the mission
-    as the dashboard sees it, so each row's cell matches the map exactly.
-    """
+    """A mission's readings as CSV, a line at a time. `cell_readings` builds the cells, as on the map."""
     cells = {cell["id"]: cell for cell in analysis.build_cells(cell_readings, mission["grid_latitude"])}
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\r\n")
@@ -327,7 +302,7 @@ def csv_lines(mission, readings, cell_readings):
         buffer.truncate()
         return text
 
-    # A byte-order mark, so Excel reads the file as UTF-8 and shows °C and µS/cm.
+    # A byte-order mark, so Excel reads UTF-8.
     yield "﻿"
     yield line([
         "Reading", "Taken at", "Latitude", "Longitude", "GPS",

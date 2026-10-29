@@ -315,7 +315,7 @@ const PARTS = {
 const FILES = [
     // Boat
     {
-        path: "Boat/main.py", part: "boat", lines: 296,
+        path: "Boat/main.py", part: "boat", lines: 270,
         summary: "The boat's program. MicroPython runs it at boot, and it loops forever: take a reading, keep it in the outbox, send it.",
         details: [
             "Every 10 s (READING_INTERVAL_SECONDS) it reads the probes and the GPS.",
@@ -329,20 +329,19 @@ const FILES = [
         links: ["Boat/sensors.py", "Boat/gps.py", "Boat/outbox.py", "Boat/config.py", "Server/routes.py"],
     },
     {
-        path: "Boat/config.py", part: "boat", lines: 94,
+        path: "Boat/config.py", part: "boat", lines: 69,
         summary: "Every boat setting, each with a comment, edited by hand before copying to the board.",
         details: [
             "DEVICE_NAME, the Wi-Fi network and password, SERVER_URL.",
             "How often to take a reading, HTTP and Wi-Fi timing, and how much of each interval may go on sending a backlog.",
             "How much the outbox may hold, and its batch size.",
             "PROBES: which probe is on which ADS1115 input (only connected probes are listed), and the ADC's range and speed.",
-            "The GPS pins, and SIMULATE_HARDWARE for bench demos (ships False) with its pond-sized simulated track.",
+            "The GPS pins (GPIO 16 and 17), and SIMULATE_HARDWARE for bench demos (ships False) with its pond-sized simulated track.",
         ],
-        note: "GPS_RX_PIN and GPS_TX_PIN ship unset. Until they are set, readings have no position.",
         links: ["Boat/main.py", "Boat/sensors.py", "Boat/gps.py", "Server/config.py"],
     },
     {
-        path: "Boat/sensors.py", part: "boat", lines: 131,
+        path: "Boat/sensors.py", part: "boat", lines: 123,
         summary: "The water probes: one millivolt value per wired probe, read through the ADS1115 boards.",
         details: [
             "Contains a small ADS1115 driver that starts one conversion and waits for it to finish.",
@@ -353,7 +352,7 @@ const FILES = [
         links: ["Boat/main.py", "Boat/config.py"],
     },
     {
-        path: "Boat/gps.py", part: "boat", lines: 204,
+        path: "Boat/gps.py", part: "boat", lines: 178,
         summary: "The GPS: turns NMEA sentences from the UART into a position.",
         details: [
             "Throws away data buffered since the last reading, and pieces lines split across reads back together.",
@@ -365,7 +364,7 @@ const FILES = [
         links: ["Boat/main.py", "Boat/config.py"],
     },
     {
-        path: "Boat/outbox.py", part: "boat", lines: 207,
+        path: "Boat/outbox.py", part: "boat", lines: 192,
         summary: "Readings saved on the board's flash until the server has them.",
         details: [
             "One JSON reading per line, oldest first.",
@@ -378,7 +377,7 @@ const FILES = [
         links: ["Boat/main.py"],
     },
     {
-        path: "Boat/simulation.py", part: "boat", lines: 64,
+        path: "Boat/simulation.py", part: "boat", lines: 58,
         summary: "Fake probe voltages and a track wandering around a pond about 24 m across, for bench demos with no hardware.",
         details: ["Used only when SIMULATE_HARDWARE is True; the dashboard marks those readings as simulated.", "Where the track is, and how big, is set in Boat/config.py."],
         links: ["Boat/main.py"],
@@ -386,7 +385,7 @@ const FILES = [
 
     // Server
     {
-        path: "Server/app.py", part: "server", lines: 133,
+        path: "Server/app.py", part: "server", lines: 126,
         summary: "Start here: the program that runs the server. On the Raspberry Pi it also runs the boat's Wi-Fi network.",
         details: [
             "sudo python3 Server/app.py on the Pi: names it rp (so the dashboard is also at http://rp.local) and creates the \"Bloom\" access point at 10.0.0.1, open unless BLOOM_WIFI_PASSWORD is set.",
@@ -398,7 +397,7 @@ const FILES = [
         links: ["Server/routes.py", "Server/config.py", "Server/processing.py", "Server/database.py"],
     },
     {
-        path: "Server/routes.py", part: "server", lines: 359,
+        path: "Server/routes.py", part: "server", lines: 334,
         summary: "Every URL the boat and the dashboard use, and exactly what each one answers.",
         details: [
             "POST /readings: processing.py checks and scores the reading, analysis.py works out its alerts, database.py stores both.",
@@ -415,11 +414,11 @@ const FILES = [
         links: ["Server/processing.py", "Server/analysis.py", "Server/database.py", "Server/web/dashboard.js"],
     },
     {
-        path: "Server/processing.py", part: "server", lines: 466,
+        path: "Server/processing.py", part: "server", lines: 425,
         summary: "Everything that happens to a reading when it arrives: checked, converted to units, and scored, once.",
         details: [
             "Refuses a payload it cannot use with HTTP 400 and the reason.",
-            "Converts millivolts into °C, pH, NTU, and µS/cm (and mg/L for nitrate and ammonium once wired). The time it was taken is now minus age_seconds.",
+            "Converts millivolts into °C, pH, NTU, and µS/cm and mg/L (nitrate, ammonium). The time it was taken is now minus age_seconds.",
             "The bloom risk, 0–100: from the trained model in Server/model/ when there is one, else from the built-in rules.",
             "The rules take a weighted average of how far each probe is into its risky range; a missing probe is left out, and too little evidence scales the risk down.",
             "The trained model is a gradient-boosted tree classifier (XGBoost, LightGBM, or scikit-learn) saved with joblib, described by model.json. Missing probes reach it as NaN, which trees handle.",
@@ -429,7 +428,7 @@ const FILES = [
         links: ["Server/config.py", "Server/model/README.md", "Server/routes.py"],
     },
     {
-        path: "Server/analysis.py", part: "server", lines: 325,
+        path: "Server/analysis.py", part: "server", lines: 281,
         summary: "What the stored readings add up to: risk levels, alerts, map cells, hotspots, and the headline.",
         details: [
             "Never scores anything: it reads the risk stored with each reading, so no two views can disagree.",
@@ -443,7 +442,7 @@ const FILES = [
         links: ["Server/routes.py", "Server/config.py", "Server/processing.py"],
     },
     {
-        path: "Server/database.py", part: "server", lines: 362,
+        path: "Server/database.py", part: "server", lines: 325,
         summary: "All storage, in two SQLite files: bloomdata.db (the readings alone, the training data) and missions.db (everything else).",
         details: [
             "Each reading goes to bloomdata.db, and its details (risk, sample_id, raw millivolts, ...) and alerts to missions.db under the same id, in one transaction: in both files or in neither.",
@@ -457,7 +456,7 @@ const FILES = [
         links: ["Server/routes.py", "Server/data/bloomdata.db", "Server/data/missions.db"],
     },
     {
-        path: "Server/config.py", part: "server", lines: 271,
+        path: "Server/config.py", part: "server", lines: 197,
         summary: "Every server and dashboard setting, in one place.",
         details: [
             "Every number the server and the dashboard work with, each with a comment. What stays in the code are facts (the Earth's size, the pH scale, datasheets).",
@@ -471,7 +470,7 @@ const FILES = [
         links: ["Server/processing.py", "Server/analysis.py", "Boat/config.py"],
     },
     {
-        path: "Server/model/README.md", part: "server", lines: 171,
+        path: "Server/model/README.md", part: "server", lines: 123,
         summary: "The project's model is a gradient-boosted tree classifier: how to train it, save it, and plug it in.",
         details: [
             "XGBoost, LightGBM, or scikit-learn's HistGradientBoostingClassifier, trained on a table and saved with joblib as bloom.joblib.",
@@ -515,7 +514,7 @@ const FILES = [
         links: ["Server/web/dashboard.js", "Server/web/style.css"],
     },
     {
-        path: "Server/web/dashboard.js", part: "front", lines: 1445,
+        path: "Server/web/dashboard.js", part: "front", lines: 1419,
         summary: "Everything the dashboard does.",
         details: [
             "Takes its settings (timings, page sizes, zoom levels) from /config.js, which the server builds from config.py; how things are drawn is one STYLE block at the top.",
@@ -530,7 +529,7 @@ const FILES = [
         links: ["Server/routes.py", "Server/web/index.html"],
     },
     {
-        path: "Server/web/style.css", part: "front", lines: 1105,
+        path: "Server/web/style.css", part: "front", lines: 1099,
         summary: "The dashboard's look: light and dark themes, phone layout, touch-sized controls.",
         details: [],
         links: ["Server/web/index.html"],
@@ -545,8 +544,8 @@ const FILES = [
     // Tests
     { path: "Boat/tests/test_gps.py", part: "test", lines: 160, summary: "NMEA parsing, checksums, locks, split lines, stale fixes, a missing GPS.", details: ["Run with: cd Boat && python3 -m unittest discover -s tests"], links: ["Boat/gps.py"] },
     { path: "Boat/tests/test_outbox.py", part: "test", lines: 118, summary: "The outbox: order, outages, refused readings, the time budget, the size cap, power cuts.", details: [], links: ["Boat/outbox.py"] },
-    { path: "Boat/tests/test_boat.py", part: "test", lines: 182, summary: "Config, probes failing one at a time, ADS1115 timing, what is sent, and how answers are handled.", details: [], links: ["Boat/main.py", "Boat/sensors.py"] },
-    { path: "Server/tests/test_processing.py", part: "test", lines: 417, summary: "Every conversion and validation rule, the rules, and the model plug-in.", details: ["model.json mistakes, column order, missing values, and failures, plus real XGBoost, LightGBM, and scikit-learn gradient-boosted tree models when those are installed.", "Run with: cd Server && python3 -m unittest discover -s tests"], links: ["Server/processing.py"] },
+    { path: "Boat/tests/test_boat.py", part: "test", lines: 187, summary: "Config, probes failing one at a time, ADS1115 timing, what is sent, and how answers are handled.", details: [], links: ["Boat/main.py", "Boat/sensors.py"] },
+    { path: "Server/tests/test_processing.py", part: "test", lines: 418, summary: "Every conversion and validation rule, the rules, and the model plug-in.", details: ["model.json mistakes, column order, missing values, and failures, plus real XGBoost, LightGBM, and scikit-learn gradient-boosted tree models when those are installed.", "Run with: cd Server && python3 -m unittest discover -s tests"], links: ["Server/processing.py"] },
     { path: "Server/tests/test_analysis.py", part: "test", lines: 149, summary: "Levels, roll-ups, alerts, cells, hotspots, the headline, and boat status.", details: [], links: ["Server/analysis.py"] },
     { path: "Server/tests/test_routes.py", part: "test", lines: 340, summary: "The HTTP API end to end, the dashboard document, the CSV, and that every view reads the one stored risk.", details: [], links: ["Server/routes.py"] },
     { path: "Server/tests/test_database.py", part: "test", lines: 232, summary: "Missions, resends, alerts, the grid latitude, new sensor columns, and the two files: bloomdata.db holds only measurements, and a reading lands in both or neither.", details: [], links: ["Server/database.py"] },
@@ -556,9 +555,9 @@ const FILES = [
     { path: "Server/tests/helpers.py", part: "test", lines: 135, summary: "Shared set-up for the server tests: a scratch database, sample readings, a stand-in model.", details: [], links: [] },
 
     // Docs
-    { path: "README.md", part: "doc", lines: 171, summary: "What the project is, what is where, how to run it, and how the risk works.", details: [], links: ["HARDWARE_SETUP.md", "CODEBASE_SUMMARY.md"] },
-    { path: "HARDWARE_SETUP.md", part: "doc", lines: 285, summary: "Wiring, flashing the ESP32, calibrating, and running the Pi.", details: [], links: ["README.md"] },
-    { path: "CODEBASE_SUMMARY.md", part: "doc", lines: 309, summary: "How the code works: the data flow, every file, the API, the database, the risk in detail.", details: [], links: ["README.md"] },
+    { path: "README.md", part: "doc", lines: 140, summary: "What the project is, what is where, how to run it, and how the risk works.", details: [], links: ["HARDWARE_SETUP.md", "CODEBASE_SUMMARY.md"] },
+    { path: "HARDWARE_SETUP.md", part: "doc", lines: 198, summary: "Wiring, flashing the ESP32, calibrating, and running the Pi.", details: [], links: ["README.md"] },
+    { path: "CODEBASE_SUMMARY.md", part: "doc", lines: 193, summary: "How the code works: the data flow, every file, the API, the database, the risk in detail.", details: [], links: ["README.md"] },
 ];
 
 const JOURNEY = [

@@ -1,15 +1,11 @@
-// The dashboard: polls GET /dashboard and draws it. The server sends plain
-// values plus the sensor list and the risk ladder (Server/config.py); this
-// file formats and draws them, and defines neither.
+// The dashboard: polls GET /dashboard and draws it.
 (() => {
     "use strict";
 
-    // Every setting (timings, page sizes, zoom levels, sizes on the water)
-    // comes from Server/config.py, through /config.js.
+    // From Server/config.py, through /config.js.
     const SETTINGS = window.BLOOM_SETTINGS;
 
-    // How things are drawn, in screen pixels and opacities. (The risk colours
-    // come from the server, and the page's look from style.css.)
+    // Map drawing, in screen pixels and opacities.
     const STYLE = {
         cell: { weight: 1.5, opacity: 0.9, fillOpacity: 0.25, popupWidth: 320 },
         hotspot: { weight: 2, dashArray: "6 6", fillOpacity: 0.08 },
@@ -30,9 +26,9 @@
 
     const NEUTRAL_COLOR = "#8a8f96";
     const PHONE_MEDIA = "(max-width: 700px)"; // the phone layout's width in style.css
-    const WORLD_VIEW = { center: [20, 0], zoom: 2 }; // until the server says where the mission is
+    const WORLD_VIEW = { center: [20, 0], zoom: 2 };
 
-    // Facts, as in Server/analysis.py, so grid lines meet the cells' edges.
+    // As in Server/analysis.py, so grid lines meet the cells' edges.
     const METERS_PER_DEGREE_LATITUDE = 111320;
     const MAX_GRID_LATITUDE = 85;
 
@@ -109,7 +105,6 @@
     function init() {
         cacheElements();
         if (!SETTINGS) {
-            // config.js comes from the same server as this page.
             els.statusLine.textContent = "Could not load the dashboard's settings. Reload the page.";
             return;
         }
@@ -121,8 +116,7 @@
         document.addEventListener("visibilitychange", () => {
             if (!document.hidden) refresh();
         });
-        // Polling pauses in a background tab; a phone in a pocket should not
-        // keep pulling the whole mission every few seconds.
+        // No polling in a background tab.
         state.pollTimer = window.setInterval(() => {
             if (!document.hidden) refresh();
         }, SETTINGS.pollSeconds * 1000);
@@ -250,8 +244,7 @@
     async function refresh() {
         if (state.shutDown) return;
         if (state.loading) {
-            // Never two at once, but never drop one either: a mission switch
-            // during a slow poll must still load.
+            // One at a time, but a queued one still runs.
             state.reloadQueued = true;
             return;
         }
@@ -262,7 +255,7 @@
 
         try {
             const data = await api(missionId === null ? "dashboard" : `missions/${missionId}/dashboard`);
-            // A response for a view the operator has already left is dropped.
+            // Drop a response for a view already left.
             if (seq === state.requestSeq && missionId === state.viewingMissionId) {
                 applyDashboard(data);
             }
@@ -471,17 +464,14 @@
         return visible[visible.length - 1] || null;
     }
 
-    // What the mission-wide parts (cells, hotspots, revisit targets, the
-    // headline, alerts) show: live, the dashboard; in replay, the mission as
-    // it stood at the replayed reading, worked out by the server exactly as
-    // the live view is. Null until the first replay answer arrives.
+    // Cells, hotspots, headline, and alerts: live, or as they stood at the
+    // replayed reading (null until the server answers).
     function missionView() {
         return state.replayIndex === null ? state.dashboard : state.replayView;
     }
 
-    // Asks for the replayed reading's view whenever replay moves on. One
-    // request at a time; if replay has moved again by the time it returns,
-    // the newest position is asked for next, so quick steps skip ahead.
+    // Fetch the replayed reading's view, one request at a time, skipping ahead
+    // to the newest position.
     function syncReplayView() {
         const reading = state.replayIndex === null ? null : state.readings[state.replayIndex];
         const missionId = state.dashboard?.mission?.id;
@@ -609,11 +599,9 @@
         els.endMissionButton.disabled = state.busy || state.shutDown || reviewing || !mission?.active;
         els.shutdownButton.disabled = state.busy || state.shutDown;
 
-        // Rebuilding the options while the list is open closes it under the
-        // operator's finger, so leave a focused select alone.
+        // Rebuilding an open list would close it.
         if (document.activeElement === els.missionSelect) return;
         const past = state.missions.filter((item) => !item.active);
-        // The live option is named after the mission that is running.
         const active = state.missions.find((item) => item.active);
         const live = active ? active.name : "No mission running";
         const signature = JSON.stringify([state.viewingMissionId, live, past.map((item) => [item.id, item.name])]);
@@ -902,8 +890,7 @@
         return window.matchMedia?.(PHONE_MEDIA).matches ? SETTINGS.pageSizePhone : SETTINGS.pageSize;
     }
 
-    // The time alone is enough while everything in view is from one day; the
-    // popup and the CSV always carry the full date.
+    // Show dates in the table only when readings span several days.
     function spansSeveralDays() {
         const days = new Set(state.readings.map((reading) => String(reading.takenAt).slice(0, 10)));
         return days.size > 1;
@@ -926,8 +913,7 @@
                 content = located ? escapeHtml(formatPosition(reading)) : `<span class="missing">No GPS fix</span>`;
             } else {
                 const value = reading[column.key];
-                // The unit rides along for the phone card layout, where there
-                // is no column header to carry it; the table hides it.
+                // The unit is for the phone card layout; the table hides it.
                 const unit = column.unit
                     ? `<span class="card-unit">${column.unit === "%" ? "" : " "}${escapeHtml(column.unit)}</span>`
                     : "";
@@ -940,8 +926,7 @@
     }
 
     function exportCsv() {
-        // The server streams every reading in the mission, not just the
-        // newest ones loaded here.
+        // The server sends every reading, not just the ones loaded here.
         const missionId = state.dashboard?.mission?.id;
         if (!missionId) return;
         const link = document.createElement("a");
@@ -963,10 +948,7 @@
             return;
         }
 
-        // No street map underneath: the dashboard must work on the Pi's own
-        // network, with no internet, so nothing is ever downloaded. The
-        // mission's own layers are drawn over a metre grid instead, with a
-        // scale bar for distances.
+        // No street map: the Pi's network has no internet.
         state.map = L.map(els.map, {
             zoomControl: false,
             zoomSnap: STYLE.zoomSnap,
@@ -1026,14 +1008,11 @@
             redrawMap(located);
         }
 
-        // Outside the redraw check on purpose: a mission with no fix yet draws
-        // exactly what the empty page drew, but must still move onto the
-        // server's configured area.
+        // Outside the redraw check, so a mission without a fix still moves to MAP_CENTER.
         if (!state.mapFitted && state.dashboard) {
             state.mapFitted = fitToMission(false);
             if (!state.mapFitted && !state.mapCentered) {
-                // Open on the configured area once, then leave the view alone
-                // so it does not jump back on every reading.
+                // Only once, so the view doesn't jump back on every reading.
                 state.mapCentered = centerOnDefault();
             }
         }
@@ -1058,10 +1037,8 @@
         drawGrid();
     }
 
-    // A metre grid under everything, redrawn whenever the view moves. Its
-    // spacing is the finest of the server's MAP_GRID_METERS whose lines are
-    // still SETTINGS.gridMinPixels apart: 5 m right in close, coarser further out. Lines
-    // on a risk cell's edge are drawn stronger.
+    // The metre grid: the finest MAP_GRID_METERS spacing at least gridMinPixels
+    // apart. Lines on cell edges are stronger.
     function drawGrid() {
         if (!state.gridLayer) return;
         state.gridLayer.clearLayers();
@@ -1103,8 +1080,7 @@
         return step === undefined ? null : step;
     }
 
-    // Longitude degrees shrink away from the equator. Sized for the mission's
-    // first fix, exactly as the server sizes the cells.
+    // Sized for the mission's first fix, as the server sizes the cells.
     function metersPerDegreeLongitude(grid) {
         const latitude = isNumber(grid.latitude) ? grid.latitude : state.map.getCenter().lat;
         const clamped = Math.min(MAX_GRID_LATITUDE, Math.max(-MAX_GRID_LATITUDE, latitude));
@@ -1233,8 +1209,7 @@
             state.openPopupKey = null;
             return;
         }
-        // Reopening after a redraw must not pan the map out from under the
-        // operator every time a new reading arrives.
+        // Reopen without panning the map.
         const popup = source.getPopup?.();
         const autoPan = popup?.options?.autoPan;
         if (popup) popup.options.autoPan = false;
@@ -1360,8 +1335,7 @@
         return Array.isArray(state.dashboard?.sensors) ? state.dashboard.sensors : [];
     }
 
-    // The sensors worth a column: any that a loaded reading has a value for,
-    // so probes that are not wired yet do not fill every row with dashes.
+    // Sensors with a value in at least one loaded reading.
     function measuredSensors() {
         if (!state.readings.length) return sensors();
         return sensors().filter((sensor) => state.readings.some((reading) => isNumber(reading[sensor.key])));

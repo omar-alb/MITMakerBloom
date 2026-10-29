@@ -1,13 +1,8 @@
-"""The boat's program. MicroPython runs main.py automatically at boot.
+"""The boat's program; MicroPython runs main.py at boot.
 
-Every READING_INTERVAL_SECONDS it takes a reading (probe millivolts and the
-GPS position), saves it to the outbox, and sends the outbox to the server as
-far as Wi-Fi allows. Wi-Fi reconnects in the background, so readings keep
-coming at the same pace whether or not the server is in range.
-
-Each reading carries a unique sample_id and the server ignores ids it already
-has, so a reading sent twice (after a lost reply, or a reboot mid-send) is
-only ever stored once.
+Every READING_INTERVAL_SECONDS: take a reading, save it to the outbox, and
+send what Wi-Fi allows. Each reading has a unique sample_id, so the server
+stores a resent one only once.
 """
 import gc
 import json
@@ -28,9 +23,7 @@ except ImportError:  # desktop Python: tests and bench demos
 if not hasattr(network, "WLAN"):  # an unrelated desktop package can share the name
     network = None
 
-# The HTTP client is urequests on older MicroPython and requests on newer.
-# On a desktop the standard library is used instead (requests there is an
-# unrelated library with a different API).
+# urequests (older MicroPython) or requests (newer); urllib on a desktop.
 try:
     import urequests as requests
 except ImportError:
@@ -41,15 +34,11 @@ except ImportError:
         except ImportError:
             pass
 
-# MicroPython's millisecond clock, with a stand-in for desktop Python.
 ticks_ms = getattr(time, "ticks_ms", lambda: int(time.time() * 1000))
 ticks_diff = getattr(time, "ticks_diff", lambda end, start: end - start)
 
-# ticks_diff() is only meaningful for spans under about six days.
-MAX_AGE_MS = 6 * 24 * 3600 * 1000
-# The Wi-Fi radio needs a moment after being switched off or on.
+MAX_AGE_MS = 6 * 24 * 3600 * 1000  # ticks_diff() is only valid under about six days
 RADIO_SETTLE_SECONDS = 1
-# Even after a slow cycle, rest this long before the next reading.
 MIN_PAUSE_SECONDS = 0.5
 
 
@@ -62,8 +51,7 @@ def _new_boot_id():
         return "{:08x}".format(random.getrandbits(32))
 
 
-# A fresh id each boot keeps sample ids unique across restarts without
-# storing a counter on flash.
+# A fresh id each boot keeps sample ids unique without a counter on flash.
 BOOT_ID = _new_boot_id()
 _reading_count = 0
 _wifi = network.WLAN(network.STA_IF) if network else None
@@ -92,10 +80,7 @@ def take_reading():
 
 
 def stamp(reading):
-    """Give a reading its unique id and note when it was taken.
-
-    Fields that start with "_" stay in the outbox and are never sent.
-    """
+    """Give a reading its id and note when it was taken. "_" fields are never sent."""
     global _reading_count
     _reading_count += 1
     reading["sample_id"] = "{}-{}-{}".format(config.DEVICE_NAME, BOOT_ID, _reading_count)
@@ -105,13 +90,10 @@ def stamp(reading):
 
 
 def request_body(reading):
-    """What gets sent: the reading without its private fields, plus its age.
+    """The reading without its "_" fields, plus age_seconds.
 
-    The ESP32 has no real-time clock, so a reading says how many seconds ago
-    it was taken and the server subtracts that from its own clock; a reading
-    sent late from the outbox keeps the time it was taken. The tick counter
-    restarts at boot, so a reading left over from an earlier boot cannot know
-    its age and is sent without one (the server then uses the arrival time).
+    The ESP32 has no clock, so the server works out the time from the age.
+    Readings from an earlier boot can't know their age and are sent without one.
     """
     body = {key: value for key, value in reading.items() if not key.startswith("_")}
     if reading.get("_boot") == BOOT_ID and reading.get("_taken_ms") is not None:
@@ -131,8 +113,7 @@ def send(reading):
 
     if 200 <= status < 300:
         return outbox.SENT
-    # 4xx means the server looked at the reading and refused it, so sending
-    # it again cannot help. 408 and 429 are the exceptions: "try again later".
+    # A 4xx won't change on resend, except 408 and 429.
     if 400 <= status < 500 and status not in (408, 429):
         print("Server refused reading {} ({}); dropping it.".format(reading.get("sample_id"), status))
         return outbox.REJECTED
@@ -144,9 +125,8 @@ def _post(body):
     """POST the body to the server and return the HTTP status code."""
     headers = {"Content-Type": "application/json"}
     if requests is not None:
-        # Always pass a timeout: without one, a half-open connection to the
-        # access point would hang the loop forever. Very old urequests builds
-        # do not take the argument.
+        # Without a timeout a half-open connection hangs the loop. Very old
+        # urequests builds don't take one.
         try:
             response = requests.post(
                 config.SERVER_URL, data=body, headers=headers, timeout=config.HTTP_TIMEOUT_SECONDS
@@ -203,11 +183,8 @@ def connect_wifi():
 
 
 def wifi_ready():
-    """True when connected. Otherwise starts a reconnect and returns False.
-
-    Never waits: WLAN.connect() returns at once and the radio keeps trying on
-    its own, so readings keep their pace while the server is out of range.
-    """
+    """True when connected; otherwise starts a background reconnect (at most
+    every WIFI_RETRY_SECONDS) and returns False without waiting."""
     global _last_wifi_attempt_ms
     if _wifi is None or _wifi.isconnected():
         return True
@@ -261,7 +238,6 @@ def run_cycle():
     try:
         reading = stamp(take_reading())
     except Exception as error:
-        # A failed reading must not stop the outbox from emptying.
         print("Could not take a reading:", error)
 
     saved = reading is not None and outbox.add(reading)
@@ -271,7 +247,6 @@ def run_cycle():
         return False
     if reading is not None and not saved:
         send(reading)  # the outbox is failing, so try this one directly
-    # Leave part of every interval for the next reading, however long the backlog.
     budget_ms = config.READING_INTERVAL_SECONDS * 1000 * config.SEND_SHARE_OF_INTERVAL
     return outbox.send_all(send, budget_ms=budget_ms)
 
@@ -287,7 +262,6 @@ def main():
         except Exception as error:
             print("Reading cycle failed:", error)
         gc.collect()
-        # Keep a steady pace: a long send should not stretch the interval.
         elapsed = ticks_diff(ticks_ms(), started) / 1000
         time.sleep(max(MIN_PAUSE_SECONDS, config.READING_INTERVAL_SECONDS - elapsed))
 

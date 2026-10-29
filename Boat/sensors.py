@@ -1,7 +1,6 @@
-"""The water probes: an ADS1115 driver and one millivolt value per wired probe.
+"""The probes: an ADS1115 driver and one millivolt value per probe.
 
-The boat sends raw millivolts only. The server converts them into pH,
-degrees, NTU, and so on, so recalibrating never means reflashing the boat.
+The server converts millivolts to units, so recalibrating never needs a reflash.
 """
 import time
 
@@ -16,11 +15,9 @@ _boards = None  # one ADS1115 per address in config.ADC_BOARDS, opened on first 
 
 
 def read_probes():
-    """Millivolts from every wired probe, and "ok" or "partial".
+    """Millivolts from every probe, and "ok" or "partial".
 
-    Each probe is read on its own, so a probe (or a whole board) that does
-    not answer is left out of this reading instead of losing the others; the
-    server scores whatever arrived. Raises only when no probe answered.
+    A probe that doesn't answer is left out. Raises only if none answered.
     """
     global _boards
     if _boards is None:
@@ -38,8 +35,7 @@ def read_probes():
 
     if failed:
         print("Probes not answering:", ", ".join(failed))
-        # Reopen the bus next time, in case a board was reseated.
-        _boards = None
+        _boards = None  # reopen the bus next time
     if not millivolts:
         raise RuntimeError("No probe answered.")
     return millivolts, "partial" if failed else "ok"
@@ -64,9 +60,7 @@ class ADS1115:
     CONFIG_REGISTER = 0x01
     GAIN_BITS = {6.144: 0, 4.096: 1, 2.048: 2, 1.024: 3, 0.512: 4, 0.256: 5}
     RATE_BITS = {8: 0, 16: 1, 32: 2, 64: 3, 128: 4, 250: 5, 475: 6, 860: 7}
-    # Give up waiting for the ready bit after this many polls and read anyway,
-    # so a bus glitch cannot hang the reading loop.
-    READY_POLLS = 12
+    READY_POLLS = 12  # then read anyway, so a bus glitch can't hang the loop
 
     def __init__(self, i2c, address, full_scale_volts=None, samples_per_second=None):
         self.i2c = i2c
@@ -89,8 +83,7 @@ class ADS1115:
             start_single_shot | input_select | (self.gain_bits << 9) | single_shot_mode
             | (self.rate_bits << 5) | comparator_off,
         )
-        # Wait out the conversion before reading. At low sample rates a fixed
-        # short wait returned the previous channel's result instead.
+        # Wait out the conversion, or a slow rate returns the previous channel.
         self._sleep_ms(1000 // self.samples_per_second + 1)
         self._wait_until_ready()
 
@@ -100,7 +93,7 @@ class ADS1115:
         return raw * self.full_scale_volts / 32768
 
     def _wait_until_ready(self):
-        # Bit 15 of the config register reads 1 once the conversion is done.
+        # Config bit 15 is 1 once the conversion is done.
         for _ in range(self.READY_POLLS):
             try:
                 if self._read(self.CONFIG_REGISTER) & 0x8000:
@@ -125,7 +118,6 @@ class ADS1115:
 
 
 if __name__ == "__main__":
-    # Bench check from the REPL: print the probes once a second.
     while True:
         print(read_probes())
         time.sleep(1)

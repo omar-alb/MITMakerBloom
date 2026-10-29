@@ -1,14 +1,9 @@
-"""Start the Bloom Detection server. This is the file you run.
+"""Start the server.
 
-    sudo python3 Server/app.py        on the Raspberry Pi: creates the "Bloom" Wi-Fi
-                                      network and serves the dashboard at http://10.0.0.1
-    python3 Server/app.py --dev       on any computer: no network changes, and the
-                                      dashboard at http://localhost:5000
+    sudo python3 Server/app.py        on the Pi: creates the "Bloom" Wi-Fi, serves http://10.0.0.1
+    python3 Server/app.py --dev       on any computer: http://localhost:5000
 
-Starting opens the database, loads the model in Server/model/ (or the
-built-in rules), and opens this run's mission; routes.py then answers every
-request. Stopping - Ctrl-C, `systemctl stop`, or the dashboard's Shut down
-button - takes the Wi-Fi network down again.
+Stopping takes the Wi-Fi network down again.
 """
 
 import argparse
@@ -22,7 +17,7 @@ import database
 import processing
 import routes
 
-WPA_MIN_PASSWORD_LENGTH = 8  # the Wi-Fi standard's rule, not a setting
+WPA_MIN_PASSWORD_LENGTH = 8
 
 
 def main(arguments=None):
@@ -32,8 +27,7 @@ def main(arguments=None):
     if field:
         _check_field_setup()
 
-    # systemctl stop and the Shut down button send SIGTERM. As a normal exit
-    # it runs the `finally` below, which takes the network down.
+    # SIGTERM (systemctl stop, Shut down button) exits through the finally below.
     signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
     try:
         if field:
@@ -87,14 +81,13 @@ def _check_field_setup():
 
 
 def set_hostname():
-    # Not essential: the dashboard is always reachable at config.ADDRESS.
     if _run(["hostname"], check=False).stdout.strip() != config.HOSTNAME:
         _run(["hostnamectl", "set-hostname", config.HOSTNAME], check=False)
 
 
 def start_access_point(port):
     name = config.ACCESS_POINT_CONNECTION
-    _run(["nmcli", "connection", "delete", name], check=False)  # left over from a previous run
+    _run(["nmcli", "connection", "delete", name], check=False)  # from a previous run
     security = ["wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", config.WIFI_PASSWORD] if config.WIFI_PASSWORD else []
     _run([
         "nmcli", "connection", "add", "type", "wifi", "ifname", config.WIFI_INTERFACE,

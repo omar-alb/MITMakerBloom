@@ -1,25 +1,11 @@
-"""SQLite storage, in two files (both in Server/data/).
+"""SQLite storage in two files (Server/data/).
 
-bloomdata.db holds the readings themselves and nothing else, so it can be
-copied off as the model's training data:
+bloomdata.db: readings (id, mission_id, taken_at, position, each sensor in its unit),
+the model's training data.
+missions.db: missions, reading_details (risk, GPS status, millivolts, ...), alerts.
 
-    readings          id, mission_id, taken_at, latitude, longitude, and each
-                      sensor's value in its unit
-
-missions.db holds everything around them, pointing at readings by their id:
-
-    missions          one row per deployment; exactly one is active (ended_at is NULL)
-    reading_details   each reading's risk and how it arrived: sample_id, device,
-                      received_at, GPS and probe status, raw millivolts, risk,
-                      confidence, drivers, scored_by
-    alerts            raised by readings as they arrive; acknowledged from the dashboard
-
-Every connection opens missions.db and attaches bloomdata.db, so one query can
-join them and one transaction writes both: a reading is stored in both files
-or in neither. A reading's risk level, colour, map cell, and so on are not
-stored: they are worked out from the stored risk whenever they are needed, so
-they can never fall out of step with it. Adding a sensor to config.SENSORS
-adds its column the next time the server starts.
+Each connection attaches bloomdata.db to missions.db, so a reading is written
+to both or neither. A new sensor in config.SENSORS gets its column at startup.
 """
 
 import json
@@ -93,8 +79,7 @@ def init():
     for path in (config.READINGS_DATABASE, config.MISSIONS_DATABASE):
         path.parent.mkdir(parents=True, exist_ok=True)
         with _open(path) as db:
-            # A rollback journal (not WAL), so that one commit to both files
-            # is all-or-nothing even if the Pi loses power halfway through.
+            # Not WAL: only a rollback journal keeps a two-file commit atomic.
             db.execute("PRAGMA journal_mode = DELETE")
     with _open(config.READINGS_DATABASE) as db:
         db.executescript(READINGS_SCHEMA.format(sensor_columns=",\n    ".join(key + " REAL" for key in SENSOR_KEYS)))
@@ -112,11 +97,7 @@ def init():
 
 
 def start_mission(name=None):
-    """End the active mission and start a new one, which is returned.
-
-    Without a name the mission is named after the time it started. A name
-    that is already taken raises MissionNameTaken, and then nothing changes.
-    """
+    """End the active mission and start a new one (named by time if unnamed)."""
     with _connect() as db:
         db.execute("UPDATE missions SET ended_at = ? WHERE ended_at IS NULL", (_now(),))
         try:
@@ -127,7 +108,7 @@ def start_mission(name=None):
 
 
 def end_mission():
-    """End the active mission and return it, or None when none was active."""
+    """End the active mission and return it, or None."""
     with _connect() as db:
         mission = _active_mission(db)
         if mission is None:
@@ -164,16 +145,12 @@ def list_missions():
 
 
 def save_reading(row, alerts=()):
-    """Store a reading, its details, and the alerts it raised, in the active mission.
+    """Store a reading and its alerts in the active mission. Returns (reading id, created).
 
-    The measurement goes to bloomdata.db; its details and alerts to
-    missions.db, under the same reading id. Starts a mission if none is
-    active. A reading whose sample_id is already stored is not stored again
-    (the boat resends whenever it missed the reply). Returns (reading id, created).
+    A sample_id already stored is not stored again.
     """
     with _connect() as db:
-        # Take the write lock first, so two copies of one reading arriving at
-        # once cannot both pass the duplicate check.
+        # Lock first, so two copies arriving at once can't both pass the duplicate check.
         db.execute("BEGIN IMMEDIATE")
         if row["sample_id"] is not None:
             existing = db.execute(
@@ -207,11 +184,7 @@ def save_reading(row, alerts=()):
 
 
 def mission_readings(mission_id, limit=None, upto=None):
-    """A mission's newest readings (up to `limit`), oldest first, with their details but not millivolts.
-
-    With `upto` (a reading id), only the readings up to and including it: the
-    mission as it stood then, for replay.
-    """
+    """A mission's newest readings, oldest first, without millivolts. `upto`: only up to that reading id."""
     columns = _reading_columns(with_millivolts=False)
     with _connect() as db:
         rows = db.execute(
@@ -225,11 +198,7 @@ def mission_readings(mission_id, limit=None, upto=None):
 
 
 def each_reading(mission_id, batch_size=None):
-    """Every reading of a mission with all its details, oldest first, a batch at a time (for the CSV).
-
-    Each batch uses its own short connection, so a long export neither holds
-    the whole mission in memory nor keeps the database busy.
-    """
+    """Every reading of a mission, oldest first, in batches with short connections (for the CSV)."""
     columns = _reading_columns(with_millivolts=True)
     last_id = 0
     while True:
@@ -252,11 +221,7 @@ def count_readings(mission_id):
 
 
 def mission_alerts(mission_id, include_acknowledged=False, limit=None, upto=None):
-    """A mission's newest alerts (up to DASHBOARD_ALERTS), a reading's bloom alert before its sensor alerts.
-
-    Open ones only, unless asked otherwise. With `upto` (a reading id), only
-    the alerts raised by readings up to and including it.
-    """
+    """A mission's newest alerts, open ones only by default. `upto`: only up to that reading id."""
     with _connect() as db:
         rows = db.execute(
             """SELECT * FROM alerts
@@ -268,7 +233,7 @@ def mission_alerts(mission_id, include_acknowledged=False, limit=None, upto=None
 
 
 def acknowledge_alert(alert_id):
-    """Acknowledge one alert. False when there is no such alert."""
+    """Acknowledge one alert. False if there is no such alert."""
     with _connect() as db:
         if db.execute("SELECT 1 FROM alerts WHERE id = ?", (alert_id,)).fetchone() is None:
             return False
@@ -294,7 +259,7 @@ def acknowledge_all(mission_id):
 
 @contextmanager
 def _connect():
-    """missions.db with bloomdata.db attached: commits both on success, rolls both back on error, closes."""
+    """missions.db with bloomdata.db attached, committed or rolled back together."""
     with _open(config.MISSIONS_DATABASE) as db:
         db.execute("ATTACH DATABASE ? AS measured", (str(config.READINGS_DATABASE),))
         yield db
@@ -302,9 +267,7 @@ def _connect():
 
 @contextmanager
 def _open(path):
-    """One database file. A request waits up to DATABASE_WAIT_SECONDS for
-    another one's write instead of failing with "database is locked"; Flask
-    serves requests on threads."""
+    """One database file, committed on success and rolled back on error."""
     db = sqlite3.connect(path, timeout=config.DATABASE_WAIT_SECONDS)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys = ON")
@@ -319,7 +282,7 @@ def _open(path):
 
 
 def _reading_columns(with_millivolts):
-    """A reading as the rest of the server sees it: the measurement and its details, joined."""
+    """Columns of a reading joined with its details."""
     measured = ["r.id", "r.mission_id", "r.taken_at", "r.latitude", "r.longitude", *("r." + key for key in SENSOR_KEYS)]
     details = ["d." + column for column in DETAIL_COLUMNS if with_millivolts or column != "millivolts"]
     return ", ".join(measured + details)
@@ -331,7 +294,7 @@ def _create_mission(db, name=None):
 
 
 def _automatic_name(db):
-    """'Mission 2026-08-15 14:05', with ' (2)', ' (3)'... after quick restarts."""
+    """'Mission <date> <time>', with ' (2)', ' (3)'... if taken."""
     base = "Mission {:%Y-%m-%d %H:%M}".format(datetime.now())
     name, number = base, 1
     while db.execute("SELECT 1 FROM missions WHERE name = ?", (name,)).fetchone():
