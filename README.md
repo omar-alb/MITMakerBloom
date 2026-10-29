@@ -1,5 +1,19 @@
 # Bloom Detection
 
+## NOTES FOR MIT, PLEASE READ:
+This is my use of AI, as I wrote about in the MIT Maker form, I used Claude Code to:
+ - write unit tests
+ - refactor code when necessary
+ - add explanatory comments
+ - write 'readme' files
+ - identify possible bugs.
+ - write temporary placeholder values
+
+Otherwise, the structure, design, and code is written by me.
+As of now, I'm still playing around with Bloom's structure. The most recent change was completely getting rid of the drone and imagery, as it drove costs up higher than the value it gave. As such, the next steps are to begin training the machine learning model (I'm planning to begin with gradient-boosted trees, currently has a placeholder), and to fine-tune specific calibrations, which I believe will take multiple deployments to learn about.
+Thank you, I hope you like my project!
+##
+
 A field system for finding and mapping possible harmful algal blooms.
 
 A small boat carries water-quality probes and a GPS. Every 10 seconds it
