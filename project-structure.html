@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Bloom Detection Map</title>
+<style>
+:root {
+    --bg: #f5f5f2;
+    --surface: #ffffff;
+    --surface-2: #eeeeea;
+    --text: #1c1e21;
+    --muted: #5d636b;
+    --line: #d9d9d3;
+    --accent: #1d5f7a;
+    --boat: #2f7d5b;
+    --boat-bg: #e3f1ea;
+    --server: #1d5f7a;
+    --server-bg: #e1edf3;
+    --front: #8a5a14;
+    --front-bg: #f5ead8;
+    --test: #6b4f8f;
+    --test-bg: #ece6f3;
+    --doc: #5d636b;
+    --doc-bg: #ececea;
+    --warn: #a33b32;
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #16181b;
+        --surface: #1f2226;
+        --surface-2: #2a2e33;
+        --text: #e7e8ea;
+        --muted: #9aa1a9;
+        --line: #353a40;
+        --accent: #6fb3d2;
+        --boat: #6cc49b;
+        --boat-bg: #1d3329;
+        --server: #6fb3d2;
+        --server-bg: #1b2d36;
+        --front: #e0ae62;
+        --front-bg: #372b19;
+        --test: #b79be0;
+        --test-bg: #2c2538;
+        --doc: #aab0b7;
+        --doc-bg: #2a2d31;
+        --warn: #e8857c;
+    }
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 1.6rem; margin: 0 0 4px; }
+h2 { font-size: 1.15rem; margin: 36px 0 12px; }
+p.lead { color: var(--muted); margin: 0; max-width: 70ch; }
+code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.9em; }
+
+/* System diagram */
+.diagram {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    overflow-x: auto;
+}
+.diagram svg { width: 100%; height: auto; display: block; }
+.diagram .node { cursor: pointer; }
+.diagram .node rect { stroke-width: 1.5; transition: stroke-width 0.15s; }
+.diagram .node:hover rect, .diagram .node:focus rect { stroke-width: 3; }
+.diagram .node:focus { outline: none; }
+.diagram text { font-family: system-ui, sans-serif; }
+.diagram .title { font-size: 17px; font-weight: 600; fill: var(--text); }
+.diagram .sub { font-size: 12.5px; fill: var(--muted); }
+.diagram .label { font-size: 12.5px; fill: var(--text); }
+.diagram .arrow { stroke: var(--muted); stroke-width: 1.6; fill: none; }
+.hint { color: var(--muted); font-size: 0.85rem; margin: 8px 0 0; }
+
+/* Explorer */
+.explorer {
+    display: grid;
+    grid-template-columns: minmax(260px, 340px) 1fr;
+    gap: 16px;
+    align-items: start;
+}
+.tree, .detail {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+}
+.tree { padding: 12px; }
+.tree-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.tree-tools input {
+    flex: 1 1 100%;
+    font: inherit;
+    font-size: 16px;
+    padding: 7px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+}
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 3px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--text);
+    cursor: pointer;
+}
+.chip[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.folder { margin: 10px 0 2px; font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+.folder:first-child { margin-top: 0; }
+.file {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    font-size: 0.92rem;
+    padding: 5px 8px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--text);
+    cursor: pointer;
+}
+.file:hover { background: var(--surface-2); }
+.file[aria-current="true"] { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); }
+.file .name { font-family: ui-monospace, Consolas, monospace; font-size: 0.86rem; flex: 1; }
+.file .lines { color: var(--muted); font-size: 0.75rem; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.empty { color: var(--muted); font-size: 0.9rem; padding: 8px; }
+
+.detail { padding: 20px 22px; position: sticky; top: 12px; }
+.detail .path { font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; color: var(--muted); word-break: break-all; }
+.detail h3 { margin: 4px 0 6px; font-size: 1.3rem; }
+.tag {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 9px;
+    border-radius: 999px;
+    margin-right: 6px;
+}
+.detail .summary { font-size: 1.02rem; margin: 12px 0; }
+.detail h4 { margin: 18px 0 6px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.detail ul { margin: 0; padding-left: 20px; }
+.detail li { margin: 3px 0; }
+.links { display: flex; flex-wrap: wrap; gap: 6px; }
+.links button {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.8rem;
+    padding: 3px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--accent);
+    cursor: pointer;
+}
+.note { border-left: 3px solid var(--warn); padding: 6px 10px; background: var(--surface-2); border-radius: 0 6px 6px 0; font-size: 0.92rem; margin-top: 14px; }
+
+/* Journey */
+.journey { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; counter-reset: step; }
+.journey li {
+    counter-increment: step;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px 12px 52px;
+    position: relative;
+}
+.journey li::before {
+    content: counter(step);
+    position: absolute;
+    left: 14px;
+    top: 12px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-weight: 600;
+    font-size: 0.85rem;
+    background: var(--surface-2);
+}
+.journey .where { margin-top: 4px; }
+.journey .where button {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.8rem;
+    border: 0;
+    padding: 0;
+    background: none;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
+    margin-right: 10px;
+}
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 0.85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+footer { margin-top: 40px; color: var(--muted); font-size: 0.85rem; }
+
+@media (max-width: 760px) {
+    .diagram svg { min-width: 720px; }
+    .explorer { grid-template-columns: 1fr; }
+    .detail { position: static; padding: 16px; }
+    .journey li { padding-left: 46px; }
+}
+</style>
+</head>
+<body>
+<main>
+    <h1>Bloom Detection: project map</h1>
+    <p class="lead">A boat measures the water and sends each reading to a Raspberry Pi. The Pi scores its bloom risk, stores it, and serves a live dashboard over its own Wi-Fi network. Click any box or file to see what it does.</p>
+
+    <h2>The three parts</h2>
+    <div class="diagram">
+        <svg viewBox="0 0 960 300" role="img" aria-label="The boat posts readings to the Raspberry Pi server; the browser asks the server for the dashboard">
+            <defs>
+                <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                    <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"></path>
+                </marker>
+            </defs>
+
+            <g class="node" data-part="boat" tabindex="0" role="button" aria-label="Show the boat's files">
+                <rect x="10" y="40" width="250" height="220" rx="12" fill="var(--boat-bg)" stroke="var(--boat)"></rect>
+                <text x="30" y="75" class="title">Boat (ESP32)</text>
+                <text x="30" y="97" class="sub">Boat/ · MicroPython</text>
+                <text x="30" y="135" class="label">• Reads the probes in millivolts</text>
+                <text x="30" y="158" class="label">• Reads the GPS position</text>
+                <text x="30" y="181" class="label">• Keeps readings in an outbox</text>
+                <text x="30" y="204" class="label">• Sends one every 10 s</text>
+                <text x="30" y="236" class="sub">main.py runs at boot</text>
+            </g>
+
+            <g class="node" data-part="server" tabindex="0" role="button" aria-label="Show the server's files">
+                <rect x="355" y="20" width="250" height="260" rx="12" fill="var(--server-bg)" stroke="var(--server)"></rect>
+                <text x="375" y="55" class="title">Server (Raspberry Pi)</text>
+                <text x="375" y="77" class="sub">Server/ · Flask + SQLite</text>
+                <text x="375" y="115" class="label">• Runs the "Bloom" Wi-Fi network</text>
+                <text x="375" y="138" class="label">• Converts millivolts to units</text>
+                <text x="375" y="161" class="label">• Scores the bloom risk, 0–100</text>
+                <text x="375" y="184" class="label">• Stores missions, readings, alerts</text>
+                <text x="375" y="207" class="label">• Builds map cells and hotspots</text>
+                <text x="375" y="230" class="label">• Serves the dashboard</text>
+                <text x="375" y="260" class="sub">http://10.0.0.1</text>
+            </g>
+
+            <g class="node" data-part="front" tabindex="0" role="button" aria-label="Show the dashboard's files">
+                <rect x="700" y="40" width="250" height="220" rx="12" fill="var(--front-bg)" stroke="var(--front)"></rect>
+                <text x="720" y="75" class="title">Dashboard (browser)</text>
+                <text x="720" y="97" class="sub">Server/web/ · HTML, CSS, JS</text>
+                <text x="720" y="135" class="label">• Map of readings and cells</text>
+                <text x="720" y="158" class="label">• Risk, boat, and alert panels</text>
+                <text x="720" y="181" class="label">• Readings table and CSV</text>
+                <text x="720" y="204" class="label">• Missions and replay</text>
+                <text x="720" y="236" class="sub">Any phone or laptop on "Bloom"</text>
+            </g>
+
+            <path class="arrow" d="M262,130 L352,130" marker-end="url(#arrowhead)"></path>
+            <text x="307" y="110" class="label" text-anchor="middle">POST</text>
+            <text x="307" y="124" class="label" text-anchor="middle">/readings</text>
+            <path class="arrow" d="M352,175 L262,175" marker-end="url(#arrowhead)"></path>
+            <text x="307" y="195" class="sub" text-anchor="middle">200 or 400</text>
+
+            <path class="arrow" d="M697,130 L607,130" marker-end="url(#arrowhead)"></path>
+            <text x="652" y="110" class="label" text-anchor="middle">GET</text>
+            <text x="652" y="124" class="label" text-anchor="middle">/dashboard</text>
+            <text x="652" y="150" class="sub" text-anchor="middle">every 9 s</text>
+            <path class="arrow" d="M607,175 L697,175" marker-end="url(#arrowhead)"></path>
+            <text x="652" y="195" class="sub" text-anchor="middle">JSON</text>
+        </svg>
+    </div>
+    <p class="hint">Click a box to list just that part's files. On a phone, swipe the diagram sideways.</p>
+
+    <h2>Every file</h2>
+    <div class="explorer">
+        <nav class="tree" aria-label="Project files">
+            <div class="tree-tools">
+                <input type="search" id="search" placeholder="Search files and descriptions" aria-label="Search files">
+                <div class="filters" id="filters"></div>
+            </div>
+            <div id="fileList"></div>
+        </nav>
+        <article class="detail" id="detail" aria-live="polite"></article>
+    </div>
+    <div class="legend" id="legend"></div>
+
+    <h2>The life of one reading</h2>
+    <ol class="journey" id="journey"></ol>
+
+    <footer>Written from the code as of October 2026; line counts are approximate. More detail in README.md, HARDWARE_SETUP.md, and CODEBASE_SUMMARY.md.</footer>
+</main>
+
+<script>
+const PARTS = {
+    boat: { label: "Boat", color: "var(--boat)", bg: "var(--boat-bg)" },
+    server: { label: "Server", color: "var(--server)", bg: "var(--server-bg)" },
+    front: { label: "Dashboard", color: "var(--front)", bg: "var(--front-bg)" },
+    test: { label: "Tests", color: "var(--test)", bg: "var(--test-bg)" },
+    doc: { label: "Docs", color: "var(--doc)", bg: "var(--doc-bg)" },
+};
+
+const FILES = [
+    // Boat
+    {
+        path: "Boat/main.py", part: "boat", lines: 296,
+        summary: "The boat's program. MicroPython runs it at boot, and it loops forever: take a reading, keep it in the outbox, send it.",
+        details: [
+            "Every 10 s (READING_INTERVAL_SECONDS) it reads the probes and the GPS.",
+            "Gives each reading a unique sample_id (boat name, boot id, count), so the server can ignore a resend.",
+            "Saves the reading to the outbox first, then sends waiting readings oldest-first to POST /readings.",
+            "Adds age_seconds when sending, so a reading sent late keeps the time it was taken.",
+            "2xx = sent. 4xx = refused, so it is dropped rather than block the rest. Anything else = kept and retried.",
+            "Wi-Fi reconnects in the background, so readings keep their pace while out of range.",
+        ],
+        key: ["take_reading()", "stamp()", "request_body()", "send()", "run_cycle()", "wifi_ready()"],
+        links: ["Boat/sensors.py", "Boat/gps.py", "Boat/outbox.py", "Boat/config.py", "Server/routes.py"],
+    },
+    {
+        path: "Boat/config.py", part: "boat", lines: 94,
+        summary: "Every boat setting, each with a comment, edited by hand before copying to the board.",
+        details: [
+            "DEVICE_NAME, the Wi-Fi network and password, SERVER_URL.",
+            "How often to take a reading, HTTP and Wi-Fi timing, and how much of each interval may go on sending a backlog.",
+            "How much the outbox may hold, and its batch size.",
+            "PROBES: which probe is on which ADS1115 input (only connected probes are listed), and the ADC's range and speed.",
+            "The GPS pins, and SIMULATE_HARDWARE for bench demos (ships False) with its pond-sized simulated track.",
+        ],
+        note: "GPS_RX_PIN and GPS_TX_PIN ship unset. Until they are set, readings have no position.",
+        links: ["Boat/main.py", "Boat/sensors.py", "Boat/gps.py", "Server/config.py"],
+    },
+    {
+        path: "Boat/sensors.py", part: "boat", lines: 131,
+        summary: "The water probes: one millivolt value per wired probe, read through the ADS1115 boards.",
+        details: [
+            "Contains a small ADS1115 driver that starts one conversion and waits for it to finish.",
+            "Reads each probe on its own: one that does not answer is left out of the reading (status \"partial\") instead of losing the rest.",
+            "Never converts units; the server does that, so calibration never needs a reflash.",
+        ],
+        key: ["read_probes()", "ADS1115.read_volts()"],
+        links: ["Boat/main.py", "Boat/config.py"],
+    },
+    {
+        path: "Boat/gps.py", part: "boat", lines: 204,
+        summary: "The GPS: turns NMEA sentences from the UART into a position.",
+        details: [
+            "Throws away data buffered since the last reading, and pieces lines split across reads back together.",
+            "Accepts only GGA or RMC sentences with a valid checksum, a satellite lock, and in-range coordinates.",
+            "A fix lost under a minute ago is reused and marked stale; after that, readings go without a position.",
+            "Reports fix, stale, no_fix, or unavailable (pins not set, or the UART failed).",
+        ],
+        key: ["read_position()", "parse_sentence()"],
+        links: ["Boat/main.py", "Boat/config.py"],
+    },
+    {
+        path: "Boat/outbox.py", part: "boat", lines: 207,
+        summary: "Readings saved on the board's flash until the server has them.",
+        details: [
+            "One JSON reading per line, oldest first.",
+            "Sends a batch at a time (OUTBOX_BATCH_SIZE, 25), within a time budget, so a long backlog never delays new readings.",
+            "Stops at the first failure and rewrites the file only after progress, to spare the flash.",
+            "Capped at OUTBOX_MAX_BYTES (512 KB), dropping the oldest first.",
+            "recover() repairs a rewrite cut short by a power cut.",
+        ],
+        key: ["add()", "send_all()", "count()", "recover()"],
+        links: ["Boat/main.py"],
+    },
+    {
+        path: "Boat/simulation.py", part: "boat", lines: 64,
+        summary: "Fake probe voltages and a track wandering around a pond about 24 m across, for bench demos with no hardware.",
+        details: ["Used only when SIMULATE_HARDWARE is True; the dashboard marks those readings as simulated.", "Where the track is, and how big, is set in Boat/config.py."],
+        links: ["Boat/main.py"],
+    },
+
+    // Server
+    {
+        path: "Server/app.py", part: "server", lines: 133,
+        summary: "Start here: the program that runs the server. On the Raspberry Pi it also runs the boat's Wi-Fi network.",
+        details: [
+            "sudo python3 Server/app.py on the Pi: names it rp (so the dashboard is also at http://rp.local) and creates the \"Bloom\" access point at 10.0.0.1, open unless BLOOM_WIFI_PASSWORD is set.",
+            "python3 Server/app.py --dev on any computer: no network changes, and the dashboard at http://localhost:5000.",
+            "Opens the database, loads the trained model (or the built-in rules), opens this run's mission, and serves routes.py.",
+            "Takes the network down when it stops: Ctrl-C, systemctl stop, or the dashboard's Shut down button.",
+        ],
+        key: ["main()", "prepare()", "start_access_point()"],
+        links: ["Server/routes.py", "Server/config.py", "Server/processing.py", "Server/database.py"],
+    },
+    {
+        path: "Server/routes.py", part: "server", lines: 359,
+        summary: "Every URL the boat and the dashboard use, and exactly what each one answers.",
+        details: [
+            "POST /readings: processing.py checks and scores the reading, analysis.py works out its alerts, database.py stores both.",
+            "GET /dashboard (and /missions/<id>/dashboard): everything the dashboard shows, in one JSON document.",
+            "GET /missions/<id>/replay/<reading>: the cells, hotspots, headline, and alerts as they stood at one reading, for replay.",
+            "GET and POST /missions, POST /missions/end.",
+            "GET /missions/<id>/readings.csv: every reading with its cell and raw millivolts, streamed.",
+            "POST /alerts/<id>/acknowledge and /alerts/acknowledge.",
+            "GET /model, POST /model/reload, POST /shutdown.",
+            "GET /config.js: the dashboard's settings from config.py, loaded by the page before dashboard.js.",
+            "Every error comes back as JSON.",
+        ],
+        key: ["post_reading()", "get_dashboard()", "dashboard_document()", "csv_lines()"],
+        links: ["Server/processing.py", "Server/analysis.py", "Server/database.py", "Server/web/dashboard.js"],
+    },
+    {
+        path: "Server/processing.py", part: "server", lines: 466,
+        summary: "Everything that happens to a reading when it arrives: checked, converted to units, and scored, once.",
+        details: [
+            "Refuses a payload it cannot use with HTTP 400 and the reason.",
+            "Converts millivolts into °C, pH, NTU, and µS/cm (and mg/L for nitrate and ammonium once wired). The time it was taken is now minus age_seconds.",
+            "The bloom risk, 0–100: from the trained model in Server/model/ when there is one, else from the built-in rules.",
+            "The rules take a weighted average of how far each probe is into its risky range; a missing probe is left out, and too little evidence scales the risk down.",
+            "The trained model is a gradient-boosted tree classifier (XGBoost, LightGBM, or scikit-learn) saved with joblib, described by model.json. Missing probes reach it as NaN, which trees handle.",
+            "A model that cannot load, or fails on a reading, leaves the rules scoring; every row records what scored it.",
+        ],
+        key: ["process()", "to_units()", "score()", "score_with_rules()", "load_model()"],
+        links: ["Server/config.py", "Server/model/README.md", "Server/routes.py"],
+    },
+    {
+        path: "Server/analysis.py", part: "server", lines: 325,
+        summary: "What the stored readings add up to: risk levels, alerts, map cells, hotspots, and the headline.",
+        details: [
+            "Never scores anything: it reads the risk stored with each reading, so no two views can disagree.",
+            "level() places a risk on the ladder; rollup() blends the mean with the peak for cells and the headline.",
+            "alerts_for(): a bloom alert at High or Severe, quoting the reading's risk, and sensor alerts at their thresholds.",
+            "Map cells: 5 m squares covering all the water crossed, each the roll-up of its readings: the state of the whole pond.",
+            "Hotspots: High and Severe readings within 10 m of each other, gathered into circles 5 to 20 m in radius and ranked for revisiting; the first five are numbered on the map: where to sample next.",
+            "overview(): the cells, hotspots, headline risk, and whether the boat is online, for the dashboard.",
+        ],
+        key: ["alerts_for()", "overview()", "build_cells()", "build_hotspots()", "level()", "rollup()"],
+        links: ["Server/routes.py", "Server/config.py", "Server/processing.py"],
+    },
+    {
+        path: "Server/database.py", part: "server", lines: 362,
+        summary: "All storage, in two SQLite files: bloomdata.db (the readings alone, the training data) and missions.db (everything else).",
+        details: [
+            "Each reading goes to bloomdata.db, and its details (risk, sample_id, raw millivolts, ...) and alerts to missions.db under the same id, in one transaction: in both files or in neither.",
+            "Reads join the two, so the rest of the server sees each reading whole.",
+            "Exactly one mission is active; a reading that arrives with none active starts one.",
+            "A reading whose sample_id is already stored is not stored again.",
+            "Only the risk is stored; its level and colour are worked out from it, so they cannot drift.",
+            "A sensor added to SENSORS gets its column on the next start.",
+        ],
+        key: ["save_reading()", "mission_readings()", "start_mission()", "mission_alerts()"],
+        links: ["Server/routes.py", "Server/data/bloomdata.db", "Server/data/missions.db"],
+    },
+    {
+        path: "Server/config.py", part: "server", lines: 271,
+        summary: "Every server and dashboard setting, in one place.",
+        details: [
+            "Every number the server and the dashboard work with, each with a comment. What stays in the code are facts (the Earth's size, the pH scale, datasheets).",
+            "SENSORS: one line per sensor with its label, unit, decimals, risk thresholds, weight, and alert threshold.",
+            "Calibration: how each probe's millivolts become the units stored in bloomdata.db.",
+            "RISK_LEVELS and the risk rules; the model's trial reading.",
+            "Sizes on the water, set for ponds: 5 m cells, the map grid's spacings, hotspot sizes and priority, shading.",
+            "The dashboard: zoom levels, how often it refreshes, alert and table page sizes, replay speed (sent to the browser as /config.js).",
+            "The two database files, the web server, the Wi-Fi network (the password can also come from BLOOM_WIFI_PASSWORD).",
+        ],
+        links: ["Server/processing.py", "Server/analysis.py", "Boat/config.py"],
+    },
+    {
+        path: "Server/model/README.md", part: "server", lines: 171,
+        summary: "The project's model is a gradient-boosted tree classifier: how to train it, save it, and plug it in.",
+        details: [
+            "XGBoost, LightGBM, or scikit-learn's HistGradientBoostingClassifier, trained on a table and saved with joblib as bloom.joblib.",
+            "model.json names the file and the inputs in training order.",
+            "What the model is given (missing values are NaN), what it must answer (the probability of a bloom), getting it onto the Pi, and checking it took.",
+        ],
+        links: ["Server/processing.py"],
+    },
+    {
+        path: "Server/requirements.txt", part: "server", lines: 1,
+        summary: "The only package the server needs: Flask.",
+        details: ["On the Pi, sudo apt install python3-flask does the same."],
+        links: [],
+    },
+    {
+        path: "Server/data/bloomdata.db", part: "doc", lines: null,
+        summary: "The training data: every reading, and nothing else.",
+        details: [
+            "One table, readings: id, mission_id, taken_at, latitude, longitude, and each sensor's value in its unit.",
+            "Copy it off the Pi and load it with pandas to train the model (Server/model/README.md).",
+            "Created the first time the server runs, and git-ignored. Back it up with missions.db by copying the whole data/ folder.",
+        ],
+        links: ["Server/database.py", "Server/data/missions.db", "Server/model/README.md"],
+    },
+    {
+        path: "Server/data/missions.db", part: "doc", lines: null,
+        summary: "Everything around the readings, pointing at them by reading id: missions, reading details, and alerts.",
+        details: [
+            "missions: name, start and end, and the latitude the cells are sized for.",
+            "reading_details: each reading's risk, confidence, drivers, scored_by, sample_id, device, arrival time, GPS and probe status, and raw millivolts.",
+            "alerts: raised by readings, acknowledged from the dashboard.",
+        ],
+        links: ["Server/database.py", "Server/data/bloomdata.db"],
+    },
+
+    // Dashboard
+    {
+        path: "Server/web/index.html", part: "front", lines: 146,
+        summary: "The dashboard page: header with mission controls, map, side panels, readings table, footer.",
+        details: [],
+        links: ["Server/web/dashboard.js", "Server/web/style.css"],
+    },
+    {
+        path: "Server/web/dashboard.js", part: "front", lines: 1445,
+        summary: "Everything the dashboard does.",
+        details: [
+            "Takes its settings (timings, page sizes, zoom levels) from /config.js, which the server builds from config.py; how things are drawn is one STYLE block at the top.",
+            "Asks GET /dashboard every 9 s while the tab is visible.",
+            "Draws the map layers: risk cells, readings, the boat's track, hotspots, revisit targets. No street map underneath, so nothing is downloaded; a metre grid (5 m right in close, coarser further out) and a scale bar give distances.",
+            "Fills the risk, boat, and alert panels (alerts a page at a time), and acknowledges alerts.",
+            "A searchable readings table whose columns sort on click, a third click clearing the sort (cards on a phone) and the CSV download.",
+            "New and end mission (the picker names the running mission), past missions read-only.",
+            "Replay: at each step it asks the server for the mission as it stood at that reading, so cells, hotspots, the headline, and alerts replay too.",
+            "Takes the sensor list, the levels, and their colours from the server, and formats times in the viewer's own time zone.",
+        ],
+        links: ["Server/routes.py", "Server/web/index.html"],
+    },
+    {
+        path: "Server/web/style.css", part: "front", lines: 1105,
+        summary: "The dashboard's look: light and dark themes, phone layout, touch-sized controls.",
+        details: [],
+        links: ["Server/web/index.html"],
+    },
+    {
+        path: "Server/web/vendor/leaflet/leaflet.js", part: "front", lines: null,
+        summary: "The Leaflet 1.9.4 map library, kept locally so the dashboard works with no internet.",
+        details: ["leaflet.css and images/ sit next to it. The dashboard uses no street-map tiles, so it never needs internet."],
+        links: [],
+    },
+
+    // Tests
+    { path: "Boat/tests/test_gps.py", part: "test", lines: 160, summary: "NMEA parsing, checksums, locks, split lines, stale fixes, a missing GPS.", details: ["Run with: cd Boat && python3 -m unittest discover -s tests"], links: ["Boat/gps.py"] },
+    { path: "Boat/tests/test_outbox.py", part: "test", lines: 118, summary: "The outbox: order, outages, refused readings, the time budget, the size cap, power cuts.", details: [], links: ["Boat/outbox.py"] },
+    { path: "Boat/tests/test_boat.py", part: "test", lines: 182, summary: "Config, probes failing one at a time, ADS1115 timing, what is sent, and how answers are handled.", details: [], links: ["Boat/main.py", "Boat/sensors.py"] },
+    { path: "Server/tests/test_processing.py", part: "test", lines: 417, summary: "Every conversion and validation rule, the rules, and the model plug-in.", details: ["model.json mistakes, column order, missing values, and failures, plus real XGBoost, LightGBM, and scikit-learn gradient-boosted tree models when those are installed.", "Run with: cd Server && python3 -m unittest discover -s tests"], links: ["Server/processing.py"] },
+    { path: "Server/tests/test_analysis.py", part: "test", lines: 149, summary: "Levels, roll-ups, alerts, cells, hotspots, the headline, and boat status.", details: [], links: ["Server/analysis.py"] },
+    { path: "Server/tests/test_routes.py", part: "test", lines: 340, summary: "The HTTP API end to end, the dashboard document, the CSV, and that every view reads the one stored risk.", details: [], links: ["Server/routes.py"] },
+    { path: "Server/tests/test_database.py", part: "test", lines: 232, summary: "Missions, resends, alerts, the grid latitude, new sensor columns, and the two files: bloomdata.db holds only measurements, and a reading lands in both or neither.", details: [], links: ["Server/database.py"] },
+    { path: "Server/tests/test_app.py", part: "test", lines: 83, summary: "Starting up: --dev, the root check, and the Wi-Fi network going up and down (with every command mocked).", details: [], links: ["Server/app.py"] },
+    { path: "Server/tests/test_boat_contract.py", part: "test", lines: 61, summary: "Runs the real boat code and checks the server accepts exactly what it sends.", details: [], links: ["Boat/config.py", "Server/config.py"] },
+    { path: "Server/tests/dashboard.test.js", part: "test", lines: 624, summary: "dashboard.js in a fake page with a fake map.", details: ["Run with: cd Server && node --test"], links: ["Server/web/dashboard.js"] },
+    { path: "Server/tests/helpers.py", part: "test", lines: 135, summary: "Shared set-up for the server tests: a scratch database, sample readings, a stand-in model.", details: [], links: [] },
+
+    // Docs
+    { path: "README.md", part: "doc", lines: 171, summary: "What the project is, what is where, how to run it, and how the risk works.", details: [], links: ["HARDWARE_SETUP.md", "CODEBASE_SUMMARY.md"] },
+    { path: "HARDWARE_SETUP.md", part: "doc", lines: 285, summary: "Wiring, flashing the ESP32, calibrating, and running the Pi.", details: [], links: ["README.md"] },
+    { path: "CODEBASE_SUMMARY.md", part: "doc", lines: 309, summary: "How the code works: the data flow, every file, the API, the database, the risk in detail.", details: [], links: ["README.md"] },
+];
+
+const JOURNEY = [
+    { text: "The boat reads its wired probes in millivolts, and its GPS position.", files: ["Boat/sensors.py", "Boat/gps.py"] },
+    { text: "It gives the reading a unique id, saves it in the outbox, and sends it to the Pi over the \"Bloom\" Wi-Fi.", files: ["Boat/main.py", "Boat/outbox.py"] },
+    { text: "The server checks it, works out when it was taken, and converts the millivolts into °C, pH, NTU, and µS/cm.", files: ["Server/routes.py", "Server/processing.py"] },
+    { text: "It works out the reading's bloom risk once, 0–100, with the gradient-boosted tree model in Server/model/ or, until it is trained, the built-in rules.", files: ["Server/processing.py", "Server/model/README.md"] },
+    { text: "It works out the alerts the reading raises. The reading goes to bloomdata.db, its risk, details, and alerts to missions.db, in the current mission. A resend is ignored.", files: ["Server/analysis.py", "Server/database.py"] },
+    { text: "The boat gets a 200 and removes the reading from its outbox. Out of range, it keeps it and tries again later.", files: ["Boat/outbox.py"] },
+    { text: "Within 9 s the dashboard asks for an update. The server builds the map cells, hotspots, headline risk, and boat status from the stored risks.", files: ["Server/routes.py", "Server/analysis.py"] },
+    { text: "The browser draws the new marker, recolours its cell, and shows any alert.", files: ["Server/web/dashboard.js"] },
+];
+
+const state = { query: "", part: null, selected: "Boat/main.py" };
+const byPath = new Map(FILES.map((file) => [file.path, file]));
+
+function el(tag, props = {}, children = []) {
+    const node = document.createElement(tag);
+    Object.assign(node, props);
+    for (const child of [].concat(children)) {
+        if (child != null) node.append(child);
+    }
+    return node;
+}
+
+function folderOf(path) {
+    const cut = path.lastIndexOf("/");
+    return cut < 0 ? "Project root" : path.slice(0, cut) + "/";
+}
+
+function fileName(path) {
+    return path.slice(path.lastIndexOf("/") + 1);
+}
+
+function matches(file) {
+    if (state.part && file.part !== state.part) return false;
+    if (!state.query) return true;
+    const haystack = [file.path, file.summary, ...(file.details || []), ...(file.key || [])].join(" ").toLowerCase();
+    return haystack.includes(state.query);
+}
+
+function renderFilters() {
+    const box = document.getElementById("filters");
+    box.replaceChildren();
+    const options = [[null, "All"], ...Object.entries(PARTS).map(([key, part]) => [key, part.label])];
+    for (const [key, label] of options) {
+        const chip = el("button", { type: "button", className: "chip", textContent: label });
+        chip.setAttribute("aria-pressed", String(state.part === key));
+        chip.addEventListener("click", () => setPart(key));
+        box.append(chip);
+    }
+}
+
+function renderList() {
+    const list = document.getElementById("fileList");
+    list.replaceChildren();
+    const visible = FILES.filter(matches);
+    if (!visible.length) {
+        list.append(el("p", { className: "empty", textContent: "No files match." }));
+        return;
+    }
+    let currentFolder = null;
+    for (const file of visible) {
+        const folder = folderOf(file.path);
+        if (folder !== currentFolder) {
+            currentFolder = folder;
+            list.append(el("div", { className: "folder", textContent: folder }));
+        }
+        const dot = el("span", { className: "dot" });
+        dot.style.background = PARTS[file.part].color;
+        const button = el("button", { type: "button", className: "file" }, [
+            dot,
+            el("span", { className: "name", textContent: fileName(file.path) }),
+            el("span", { className: "lines", textContent: file.lines ? file.lines + " lines" : "" }),
+        ]);
+        button.setAttribute("aria-current", String(file.path === state.selected));
+        button.addEventListener("click", () => select(file.path, window.matchMedia("(max-width: 760px)").matches));
+        list.append(button);
+    }
+}
+
+function renderDetail() {
+    const detail = document.getElementById("detail");
+    const file = byPath.get(state.selected);
+    detail.replaceChildren();
+    if (!file) return;
+    const part = PARTS[file.part];
+    const tag = el("span", { className: "tag", textContent: part.label });
+    tag.style.background = part.bg;
+    tag.style.color = part.color;
+
+    detail.append(
+        el("div", { className: "path", textContent: file.path }),
+        el("h3", { textContent: fileName(file.path) }),
+        el("div", {}, [tag, file.lines ? el("span", { className: "path", textContent: "~" + file.lines + " lines" }) : null]),
+        el("p", { className: "summary", textContent: file.summary }),
+    );
+    if (file.details && file.details.length) {
+        detail.append(el("h4", { textContent: "What it does" }), el("ul", {}, file.details.map((item) => el("li", { textContent: item }))));
+    }
+    if (file.key && file.key.length) {
+        detail.append(el("h4", { textContent: "Main functions" }), el("ul", {}, file.key.map((item) => el("li", {}, el("code", { textContent: item })))));
+    }
+    if (file.note) {
+        detail.append(el("p", { className: "note", textContent: file.note }));
+    }
+    const links = (file.links || []).filter((path) => byPath.has(path));
+    if (links.length) {
+        const row = el("div", { className: "links" });
+        for (const path of links) {
+            const button = el("button", { type: "button", textContent: fileName(path), title: path });
+            button.addEventListener("click", () => select(path, true));
+            row.append(button);
+        }
+        detail.append(el("h4", { textContent: "Works with" }), row);
+    }
+}
+
+function renderJourney() {
+    const list = document.getElementById("journey");
+    for (const step of JOURNEY) {
+        const where = el("div", { className: "where" });
+        for (const path of step.files) {
+            const button = el("button", { type: "button", textContent: fileName(path), title: path });
+            button.addEventListener("click", () => select(path, true));
+            where.append(button);
+        }
+        list.append(el("li", {}, [el("div", { textContent: step.text }), where]));
+    }
+}
+
+function renderLegend() {
+    const legend = document.getElementById("legend");
+    for (const part of Object.values(PARTS)) {
+        const dot = el("span", { className: "dot" });
+        dot.style.background = part.color;
+        legend.append(el("span", {}, [dot, part.label]));
+    }
+}
+
+function select(path, scroll) {
+    state.selected = path;
+    const file = byPath.get(path);
+    if (file && !matches(file)) {
+        state.part = null;
+        state.query = "";
+        document.getElementById("search").value = "";
+        renderFilters();
+    }
+    renderList();
+    renderDetail();
+    if (scroll) document.getElementById("detail").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function setPart(part) {
+    state.part = part;
+    renderFilters();
+    renderList();
+    const first = FILES.find(matches);
+    if (first && !matches(byPath.get(state.selected))) {
+        state.selected = first.path;
+        renderList();
+        renderDetail();
+    }
+}
+
+document.getElementById("search").addEventListener("input", (event) => {
+    state.query = event.target.value.trim().toLowerCase();
+    renderList();
+});
+
+for (const node of document.querySelectorAll(".diagram .node")) {
+    const activate = () => {
+        setPart(node.dataset.part);
+        document.querySelector(".explorer").scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    node.addEventListener("click", activate);
+    node.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            activate();
+        }
+    });
+}
+
+renderFilters();
+renderList();
+renderDetail();
+renderJourney();
+renderLegend();
+</script>
+</body>
+</html>

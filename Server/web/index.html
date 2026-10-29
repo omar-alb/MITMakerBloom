@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f4f4f1" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#17191c" media="(prefers-color-scheme: dark)">
+    <title>Bloom Detection</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%231d5f7a'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+    <link rel="stylesheet" href="style.css">
+    <script defer src="vendor/leaflet/leaflet.js"></script>
+    <script defer src="config.js"></script>
+    <script defer src="dashboard.js"></script>
+</head>
+<body>
+    <header class="site-header">
+        <div class="title-row">
+            <h1>Bloom Detection</h1>
+            <p class="status-line" id="statusLine" role="status" aria-live="polite">Connecting…</p>
+        </div>
+        <div class="mission-controls">
+            <label class="mission-picker">
+                <span>Mission</span>
+                <select id="missionSelect">
+                    <option value="">Loading…</option>
+                </select>
+            </label>
+            <button type="button" id="newMissionButton">New mission</button>
+            <button type="button" id="endMissionButton">End mission</button>
+        </div>
+    </header>
+
+    <p class="review-banner" id="reviewBanner" hidden>
+        You are looking at a past mission. Nothing here updates.
+        <button type="button" class="link-button" id="backToCurrentButton">Back to the current mission</button>
+    </p>
+
+    <main class="layout">
+        <section class="map-section" aria-label="Map">
+            <div class="map-frame">
+                <div id="map" aria-label="Map of readings and risk cells"></div>
+                <p class="map-unavailable" id="mapUnavailable" hidden>The map library did not load. Everything else still works.</p>
+
+                <details class="layers" id="layersPanel">
+                    <summary>Layers</summary>
+                    <fieldset>
+                        <legend class="visually-hidden">Map layers</legend>
+                        <label><input type="checkbox" data-layer="cells" checked> Risk cells</label>
+                        <label><input type="checkbox" data-layer="readings" checked> Readings</label>
+                        <label><input type="checkbox" data-layer="track" checked> Boat track</label>
+                        <label><input type="checkbox" data-layer="hotspots" checked> Hotspots</label>
+                        <label><input type="checkbox" data-layer="targets" checked> Revisit targets</label>
+                        <label><input type="checkbox" data-layer="shading"> Risk shading</label>
+                        <label><input type="checkbox" data-layer="grid" checked> Grid</label>
+                    </fieldset>
+                    <div class="legend">
+                        <p>Risk</p>
+                        <ul id="legendList"></ul>
+                    </div>
+                </details>
+
+                <button type="button" class="fit-button" id="fitButton">Fit to mission</button>
+                <span class="grid-label" id="gridLabel" hidden></span>
+            </div>
+
+            <div class="replay" id="replay">
+                <button type="button" id="playButton">Replay</button>
+                <input type="range" id="timeline" min="0" max="0" value="0" step="1" aria-label="Replay position">
+                <span class="replay-time" id="replayTime">--</span>
+                <button type="button" id="liveButton" hidden>Back to live</button>
+            </div>
+        </section>
+
+        <aside class="side">
+            <section class="panel risk-panel" aria-labelledby="riskHeading">
+                <h2 id="riskHeading">Bloom risk</h2>
+                <div class="risk-headline">
+                    <span class="risk-number" id="riskNumber">--</span>
+                    <div>
+                        <span class="badge" id="riskBadge">No data</span>
+                        <p class="risk-basis" id="riskBasis"></p>
+                    </div>
+                </div>
+                <div class="distribution" id="distribution" aria-label="How many cells are at each risk level"></div>
+                <dl class="facts" id="riskFacts"></dl>
+            </section>
+
+            <section class="panel boat-panel" aria-labelledby="boatHeading">
+                <h2 id="boatHeading">Boat</h2>
+                <dl class="facts" id="boatFacts"></dl>
+                <h3>Latest reading</h3>
+                <dl class="facts latest-reading" id="latestReading"></dl>
+            </section>
+
+            <section class="panel alerts-panel" aria-labelledby="alertsHeading">
+                <div class="panel-heading">
+                    <h2 id="alertsHeading">Alerts <span class="count" id="alertCount"></span></h2>
+                    <button type="button" class="small" id="acknowledgeAllButton">Acknowledge all</button>
+                </div>
+                <ul class="alert-list" id="alertList" aria-live="polite"></ul>
+                <nav class="pager" id="alertPager" aria-label="Alert pages" hidden>
+                    <button type="button" class="small" id="prevAlerts">Previous</button>
+                    <span id="alertPageInfo"></span>
+                    <button type="button" class="small" id="nextAlerts">Next</button>
+                </nav>
+            </section>
+        </aside>
+
+        <section class="panel readings-panel" aria-labelledby="readingsHeading">
+            <div class="panel-heading readings-heading">
+                <h2 id="readingsHeading">Readings <span class="count" id="readingCount"></span></h2>
+                <div class="readings-tools">
+                    <input type="search" id="searchInput" placeholder="Search" aria-label="Search readings">
+                    <select id="levelFilter" aria-label="Filter by risk level">
+                        <option value="">All risk levels</option>
+                    </select>
+                    <button type="button" id="exportButton" title="Every reading in this mission">Download CSV</button>
+                </div>
+            </div>
+
+            <div class="table-scroll">
+                <table class="readings-table">
+                    <thead>
+                        <tr id="readingsHeaderRow"></tr>
+                    </thead>
+                    <tbody id="readingsBody"></tbody>
+                </table>
+            </div>
+            <p class="empty-note" id="readingsEmpty" hidden>No readings yet. They appear here as the boat sends them.</p>
+
+            <nav class="pager" aria-label="Reading pages">
+                <button type="button" id="prevPage">Previous</button>
+                <span id="pageInfo"></span>
+                <button type="button" id="nextPage">Next</button>
+            </nav>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <span id="modelInfo"></span>
+        <button type="button" class="link-button danger" id="shutdownButton">Shut down server</button>
+    </footer>
+</body>
+</html>

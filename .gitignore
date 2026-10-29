@@ -1,0 +1,6 @@
+# What the server writes while it runs: bloomdata.db and missions.db.
+Server/data/
+
+# The boat's outbox, when the boat program runs on a computer for a bench demo.
+Boat/outbox.jsonl
+Boat/outbox.jsonl.tmp
