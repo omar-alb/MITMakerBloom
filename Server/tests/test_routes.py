@@ -17,7 +17,7 @@ import database
 import processing
 import routes
 
-RISKY = {"ph": 1130.0, "temperature": 790.0, "turbidity": 2790.0, "conductivity": 170.0}
+RISKY = {"ph": 2110.0, "temperature": 790.0, "turbidity": 2790.0, "conductivity": 2000.0}
 
 
 def document(rows, **options):

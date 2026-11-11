@@ -90,7 +90,7 @@ class ReadingTests(unittest.TestCase):
         stored = database.mission_readings(mission_id)[0]
         self.assertEqual(stored["drivers"], ["warm water"])
         self.assertNotIn("millivolts", stored)  # the dashboard does not need them
-        self.assertEqual(next(database.each_reading(mission_id))["millivolts"]["ph"], 1450.0)
+        self.assertEqual(next(database.each_reading(mission_id))["millivolts"]["ph"], 2450.0)
 
     def test_newest_oldest_first(self):
         for risk in range(12):
@@ -175,11 +175,11 @@ class TwoFileTests(unittest.TestCase):
         for sensor in config.SENSORS:
             self.assertEqual(measured[sensor.key], units[sensor.key], sensor.key)
         self.assertEqual(measured["temperature"], 22.0)  # 720 mV from a TMP36 is 22.0 °C
-        self.assertEqual(measured["ph"], 7.28)  # 1450 mV, against a 1500 mV pH 7 buffer
+        self.assertEqual(measured["ph"], 7.29)  # 2450 mV, against a 2500 mV pH 7 buffer
         self.assertIsNone(measured["nitrate"])  # did not report: missing, not zero
         # The millivolts themselves are kept, in missions.db, for recalibrating later.
         with sqlite3.connect(config.MISSIONS_DATABASE) as db:
-            self.assertEqual(json.loads(db.execute("SELECT millivolts FROM reading_details").fetchone()[0])["ph"], 1450.0)
+            self.assertEqual(json.loads(db.execute("SELECT millivolts FROM reading_details").fetchone()[0])["ph"], 2450.0)
 
     def test_missions_db_links_by_id(self):
         reading_id, _ = database.save_reading(row(sample_id="boat-a1-1", risk=64), [bloom_alert()])

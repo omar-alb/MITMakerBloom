@@ -7,10 +7,10 @@ import config
 
 # Millivolts: (centre, random spread either side).
 MILLIVOLTS = {
-    "ph": (1460, 90),
+    "ph": (2460, 150),
     "temperature": (720, 80),
     "turbidity": (2799, 1),
-    "conductivity": (82, 25),
+    "conductivity": (670, 150),
     "nitrate": (1705, 25),
     "ammonium": (1595, 25),
 }

@@ -38,7 +38,7 @@ class ConversionTests(unittest.TestCase):
 
     def test_ph(self):
         self.assertEqual(processing.to_units({"ph": config.PH_REFERENCE_MV})["ph"], config.PH_REFERENCE_PH)
-        self.assertIsNone(processing.to_units({"ph": 100.0})["ph"])  # pH 14.9
+        self.assertIsNone(processing.to_units({"ph": 100.0})["ph"])  # pH 21
 
     def test_turbidity(self):
         self.assertEqual(processing.to_units({"turbidity": config.TURBIDITY_CLEAR_MV})["turbidity"], 0.0)
@@ -69,7 +69,7 @@ class ConversionTests(unittest.TestCase):
     def test_every_sensor_converted(self):
         units = processing.to_units({
             **{sensor.key: 1234.5678 for sensor in config.SENSORS},
-            "temperature": 712.3456, "nitrate": 1660.4567, "ammonium": 1660.4567,
+            "temperature": 712.3456, "ph": 2412.3456, "nitrate": 1660.4567, "ammonium": 1660.4567,
         })
         for sensor in config.SENSORS:
             with self.subTest(sensor=sensor.key):
@@ -110,7 +110,7 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(row["device"], "boat")
         self.assertEqual((row["latitude"], row["longitude"]), HERE)
         self.assertEqual(row["gps"], "fix")
-        self.assertEqual(row["millivolts"]["ph"], 1450.0)
+        self.assertEqual(row["millivolts"]["ph"], 2450.0)
         self.assertIsNotNone(row["ph"])
         self.assertIsNone(row["nitrate"])
         self.assertTrue(0 <= row["risk"] <= 100)

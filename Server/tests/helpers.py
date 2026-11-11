@@ -87,7 +87,7 @@ def payload(**overrides):
     body = {
         "device": "boat",
         "hardware": "ok",
-        "millivolts": {"ph": 1450.0, "temperature": 720.0, "turbidity": 2799.0, "conductivity": 82.0},
+        "millivolts": {"ph": 2450.0, "temperature": 720.0, "turbidity": 2799.0, "conductivity": 670.0},
         "gps": {"status": "fix", "latitude": HERE[0], "longitude": HERE[1]},
     }
     body.update(overrides)

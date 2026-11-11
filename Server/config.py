@@ -95,28 +95,26 @@ PROBE_VALID_MV = (5.0, 3280.0)  # outside this: a dead or unplugged probe
 TEMPERATURE_SENSOR = "tmp36"  # "tmp36" (500 mV at 0 °C) or "lm35" (0 mV at 0 °C)
 TEMPERATURE_RANGE_C = (-10.0, 60.0)
 
-# DFRobot Gravity analog pH (V2): pH 7 at 1500 mV, pH 4 at about 2032 mV.
-PH_REFERENCE_MV = 1500.0  # reading in a PH_REFERENCE_PH buffer
+PH_REFERENCE_MV = 2500.0  # reading in a PH_REFERENCE_PH buffer
 PH_REFERENCE_PH = 7.0
-PH_MV_PER_PH = -177.5
+PH_MV_PER_PH = -170.0
 
 TURBIDITY_CLEAR_MV = 2800.0  # 0 NTU
 TURBIDITY_DIRTY_MV = 2600.0  # in a TURBIDITY_DIRTY_NTU standard
 TURBIDITY_DIRTY_NTU = 1000.0
 
-# DFRobot Gravity analog EC (K=1): about 164 mV per mS/cm.
 CONDUCTIVITY_ZERO_MV = 0.0  # pure water
-CONDUCTIVITY_CAL_MV = 232.0  # in a CONDUCTIVITY_CAL_US_CM standard
-CONDUCTIVITY_CAL_US_CM = 1413.0
-CONDUCTIVITY_PER_DEGREE = 0.019  # compensation to 25 °C
+CONDUCTIVITY_CAL_MV = 670.0  # in a CONDUCTIVITY_CAL_US_CM standard
+CONDUCTIVITY_CAL_US_CM = 500.0
+CONDUCTIVITY_PER_DEGREE = 0.02  # compensation to 25 °C
 
-# Thread-based ion-selective electrodes, read through a 1.65 V mid-supply
-# bias. Slightly below the ideal 59 mV per tenfold step; nitrate (an anion)
-# falls, ammonium (a cation) rises.
+# Thread-based ion-selective electrodes: the voltage falls as nitrate (an
+# anion) rises, and rises with ammonium (a cation).
 NITRATE_REFERENCE_MV = 1650.0  # in a NITRATE_REFERENCE_MG_L standard
 NITRATE_REFERENCE_MG_L = 10.0
 NITRATE_MV_PER_DECADE = -55.0
 
+# Temporary: the circuit is being changed so it can read ammonium's negative voltages.
 AMMONIUM_REFERENCE_MV = 1650.0  # in an AMMONIUM_REFERENCE_MG_L standard
 AMMONIUM_REFERENCE_MG_L = 1.0
 AMMONIUM_MV_PER_DECADE = 55.0

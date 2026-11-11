@@ -69,7 +69,7 @@ get their arrival time.
   "sample_id": "boat-3f9a1c0d7b2e-17",
   "age_seconds": 12.5,
   "hardware": "ok",
-  "millivolts": {"ph": 1450.0, "temperature": 720.0, "turbidity": 2799.0, "conductivity": 82.0,
+  "millivolts": {"ph": 2450.0, "temperature": 720.0, "turbidity": 2799.0, "conductivity": 670.0,
                  "nitrate": 1705.0, "ammonium": 1595.0},
   "gps": {"status": "fix", "latitude": 42.36003, "longitude": -71.09413}
 }
