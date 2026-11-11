@@ -43,7 +43,7 @@ ADC_SAMPLES_PER_SECOND = 128
 
 PROBES = {
     "ph": (0, 0),
-    "temperature": (0, 1),
+    "temperature": (0, 1),  # temporary: moving to a DS18B20, which is digital (1-Wire)
     "turbidity": (0, 2),
     "conductivity": (0, 3),
     "nitrate": (1, 0),

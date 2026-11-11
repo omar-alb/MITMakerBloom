@@ -71,44 +71,57 @@ class Sensor:
     alert_at: Optional[float] = None  # sensor alert at or above
 
 
+# Cyanobacteria bloom above about 20 °C and push pH past 9 as they use up CO2.
+# Turbidity and conductivity also rise with mud and runoff, so they weigh less.
+# Nitrate and ammonium are mg/L as N; above 1-2 and 0.1-0.5 a pond is eutrophic.
 SENSORS = (
-    Sensor("temperature", "Temperature", "°C", 1, 0.24, 18.0, 28.0, "warm water"),
-    Sensor("ph", "pH", "", 2, 0.16, 7.8, 9.1, "high pH"),
-    Sensor("turbidity", "Turbidity", "NTU", 1, 0.20, 5.0, 35.0, "high turbidity", alert_at=20.0),
-    Sensor("conductivity", "Conductivity", "µS/cm", 0, 0.10, 450.0, 1000.0, "high conductivity"),
-    Sensor("nitrate", "Nitrate", "mg/L", 2, 0.15, 0.5, 5.0, "high nitrate", alert_at=10.0),
-    Sensor("ammonium", "Ammonium", "mg/L", 2, 0.15, 0.05, 1.0, "high ammonium", alert_at=1.0),
+    Sensor("temperature", "Temperature", "°C", 1, 0.25, 18.0, 28.0, "warm water"),
+    Sensor("ph", "pH", "", 2, 0.25, 8.0, 9.5, "high pH", alert_at=9.5),
+    Sensor("turbidity", "Turbidity", "NTU", 1, 0.15, 5.0, 40.0, "high turbidity", alert_at=50.0),
+    Sensor("conductivity", "Conductivity", "µS/cm", 0, 0.05, 500.0, 1500.0, "high conductivity"),
+    Sensor("nitrate", "Nitrate", "mg/L", 2, 0.15, 0.3, 2.0, "high nitrate", alert_at=10.0),
+    Sensor("ammonium", "Ammonium", "mg/L", 2, 0.15, 0.05, 0.5, "high ammonium", alert_at=1.0),
 )
 
 
 # --- Calibration: millivolts to units ---------------------------------------
+# Rough estimates, to be replaced once the probes are calibrated.
 # Raw millivolts are kept in missions.db, so readings can be re-converted later.
+# Out-of-range values are stored as missing.
 
+PROBE_VALID_MV = (5.0, 3280.0)  # outside this: a dead or unplugged probe
+
+# Temporary: the sensor is changing to a DS18B20, which is digital (1-Wire), so this will change.
 TEMPERATURE_SENSOR = "tmp36"  # "tmp36" (500 mV at 0 °C) or "lm35" (0 mV at 0 °C)
 TEMPERATURE_RANGE_C = (-10.0, 60.0)
 
+# DFRobot Gravity analog pH (V2): pH 7 at 1500 mV, pH 4 at about 2032 mV.
 PH_REFERENCE_MV = 1500.0  # reading in a PH_REFERENCE_PH buffer
 PH_REFERENCE_PH = 7.0
-PH_MV_PER_PH = -59.16
+PH_MV_PER_PH = -177.5
 
-TURBIDITY_CLEAR_MV = 3000.0  # 0 NTU
-TURBIDITY_DIRTY_MV = 1000.0  # in a TURBIDITY_DIRTY_NTU standard
-TURBIDITY_DIRTY_NTU = 100.0
+TURBIDITY_CLEAR_MV = 2800.0  # 0 NTU
+TURBIDITY_DIRTY_MV = 2600.0  # in a TURBIDITY_DIRTY_NTU standard
+TURBIDITY_DIRTY_NTU = 1000.0
 
-CONDUCTIVITY_ZERO_MV = 450.0  # pure water
-CONDUCTIVITY_CAL_MV = 2200.0  # in a CONDUCTIVITY_CAL_US_CM standard
-CONDUCTIVITY_CAL_US_CM = 2000.0
+# DFRobot Gravity analog EC (K=1): about 164 mV per mS/cm.
+CONDUCTIVITY_ZERO_MV = 0.0  # pure water
+CONDUCTIVITY_CAL_MV = 232.0  # in a CONDUCTIVITY_CAL_US_CM standard
+CONDUCTIVITY_CAL_US_CM = 1413.0
 CONDUCTIVITY_PER_DEGREE = 0.019  # compensation to 25 °C
 
-NITRATE_REFERENCE_MV = 1500.0  # in a NITRATE_REFERENCE_MG_L standard
+# Thread-based ion-selective electrodes, read through a 1.65 V mid-supply
+# bias. Slightly below the ideal 59 mV per tenfold step; nitrate (an anion)
+# falls, ammonium (a cation) rises.
+NITRATE_REFERENCE_MV = 1650.0  # in a NITRATE_REFERENCE_MG_L standard
 NITRATE_REFERENCE_MG_L = 10.0
-NITRATE_MV_PER_DECADE = -59.16
+NITRATE_MV_PER_DECADE = -55.0
 
-AMMONIUM_REFERENCE_MV = 1500.0  # in an AMMONIUM_REFERENCE_MG_L standard
+AMMONIUM_REFERENCE_MV = 1650.0  # in an AMMONIUM_REFERENCE_MG_L standard
 AMMONIUM_REFERENCE_MG_L = 1.0
-AMMONIUM_MV_PER_DECADE = -59.16
+AMMONIUM_MV_PER_DECADE = 55.0
 
-# Nitrate and ammonium: trusted this many tenfold steps from the standard, capped at this.
+# Nitrate and ammonium limits: tenfold steps from the standard, and mg/L.
 ION_SELECTIVE_MAX_DECADES = 3
 ION_SELECTIVE_MAX_MG_L = 1000.0
 

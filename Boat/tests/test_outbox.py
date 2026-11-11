@@ -44,7 +44,7 @@ class OutboxTests(unittest.TestCase):
 
         return outbox.send_all(send, budget_ms=budget_ms), sent
 
-    def test_everything_is_sent_in_order_and_the_file_removed(self):
+    def test_sent_in_order(self):
         self.add(60)
         emptied, sent = self.send_all(lambda n: outbox.SENT)
         self.assertTrue(emptied)
@@ -59,14 +59,14 @@ class OutboxTests(unittest.TestCase):
         self.assertEqual(self.waiting(), list(range(30, 40)))
         self.assertEqual(outbox.count(), 10)
 
-    def test_a_failed_first_attempt_does_not_rewrite_the_file(self):
+    def test_failure_no_rewrite(self):
         # Rewriting flash on every failed attempt wears the board out.
         self.add(3)
         with mock.patch.object(outbox, "_drop_oldest") as drop:
             self.send_all(lambda n: outbox.FAILED)
         drop.assert_not_called()
 
-    def test_a_refused_reading_does_not_block_the_ones_behind_it(self):
+    def test_refused_does_not_block(self):
         self.add(3)
         emptied, sent = self.send_all(lambda n: outbox.REJECTED if n == 1 else outbox.SENT)
         self.assertTrue(emptied)
@@ -77,7 +77,7 @@ class OutboxTests(unittest.TestCase):
         emptied, sent = self.send_all(lambda n: outbox.SENT)
         self.assertEqual((emptied, sent), (True, [0, 2]))
 
-    def test_a_long_backlog_drains_over_several_cycles(self):
+    def test_backlog_over_cycles(self):
         self.add(10)
         clock = iter(range(0, 100_000, 1000))  # every send "takes" a second
         with mock.patch.object(outbox, "ticks_ms", side_effect=lambda: next(clock)):
@@ -85,7 +85,7 @@ class OutboxTests(unittest.TestCase):
         self.assertFalse(emptied)
         self.assertEqual(self.waiting(), list(range(3, 10)))
 
-    def test_a_full_outbox_drops_its_oldest_readings(self):
+    def test_full_drops_oldest(self):
         with mock.patch.object(config, "OUTBOX_MAX_BYTES", 200):
             self.add(40)
         waiting = self.waiting()
@@ -93,20 +93,20 @@ class OutboxTests(unittest.TestCase):
         self.assertNotIn(0, waiting)
         self.assertLess(len(waiting), 40)
 
-    def test_a_rewrite_cut_short_after_the_delete_is_finished_at_boot(self):
+    def test_recover_after_delete(self):
         self.copy.write_text('{"n": 7}\n')
         outbox.recover()
         self.assertEqual(self.waiting(), [7])
         self.assertFalse(self.copy.exists())
 
-    def test_a_rewrite_cut_short_before_the_delete_is_undone_at_boot(self):
+    def test_recover_before_delete(self):
         self.add(2)
         self.copy.write_text('{"n": 1}\n')
         outbox.recover()
         self.assertEqual(self.waiting(), [0, 1])
         self.assertFalse(self.copy.exists())
 
-    def test_the_file_is_copied_into_place_when_rename_is_refused(self):
+    def test_copy_when_rename_fails(self):
         self.add(3)
         with mock.patch.object(outbox.os, "rename", side_effect=OSError("EEXIST")):
             outbox._drop_oldest(1)

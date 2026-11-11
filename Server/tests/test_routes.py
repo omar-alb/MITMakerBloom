@@ -17,7 +17,7 @@ import database
 import processing
 import routes
 
-RISKY = {"ph": 1380.0, "temperature": 790.0, "turbidity": 1200.0, "conductivity": 2100.0}
+RISKY = {"ph": 1130.0, "temperature": 790.0, "turbidity": 2790.0, "conductivity": 170.0}
 
 
 def document(rows, **options):
@@ -44,7 +44,7 @@ class ReadingRouteTests(ApiTestCase):
         self.assertEqual((status, body["status"]), (200, "saved"))
         self.assertEqual(database.count_readings(self.mission["id"]), 1)
 
-    def test_a_resent_reading_gets_a_200_but_is_not_stored_twice(self):
+    def test_resend_not_stored_twice(self):
         # Anything but 2xx and the boat would keep resending it forever.
         self.post(payload(sample_id="boat-1-2"))
         status, body = self.post(payload(sample_id="boat-1-2"))
@@ -56,7 +56,7 @@ class ReadingRouteTests(ApiTestCase):
         kinds = [alert["kind"] for alert in database.mission_alerts(self.mission["id"])]
         self.assertEqual(kinds, ["bloom", "turbidity"])
 
-    def test_a_bad_reading_is_a_400_with_the_reason(self):
+    def test_bad_reading_400(self):
         for body in (payload(device=None), payload(gps={"status": "fix", "latitude": 95.0, "longitude": 0.0}), [], {}):
             with self.subTest(body=body):
                 status, response = self.post(body)
@@ -69,7 +69,7 @@ class ReadingRouteTests(ApiTestCase):
 
 
 class DashboardRouteTests(ApiTestCase):
-    def test_the_dashboard_shows_the_active_mission(self):
+    def test_dashboard_active_mission(self):
         self.post(payload())
         body = self.client.get("/dashboard").get_json()
         self.assertEqual(body["mission"]["id"], self.mission["id"])
@@ -83,7 +83,7 @@ class DashboardRouteTests(ApiTestCase):
         self.assertEqual((body["mission"]["id"], body["mission"]["active"]), (self.mission["id"], False))
         self.assertEqual(self.client.get("/missions/9999/dashboard").status_code, 404)
 
-    def test_with_no_mission_at_all_the_dashboard_is_empty(self):
+    def test_no_mission_empty_dashboard(self):
         database.end_mission()
         body = self.client.get("/dashboard").get_json()
         self.assertIsNone(body["mission"])
@@ -94,7 +94,7 @@ class DashboardRouteTests(ApiTestCase):
             with self.subTest(path=path), self.client.get(path) as response:
                 self.assertEqual(response.status_code, 200)
 
-    def test_the_dashboard_gets_every_setting_it_uses_from_config(self):
+    def test_config_js_has_every_setting(self):
         with self.client.get("/config.js") as response:
             self.assertEqual(response.mimetype, "text/javascript")
             text = response.get_data(as_text=True)
@@ -109,7 +109,7 @@ class DashboardRouteTests(ApiTestCase):
         self.assertEqual(settings["maxZoom"], config.MAP_MAX_ZOOM)
         self.assertEqual(settings["shadingRadiusMeters"], config.SHADING_RADIUS_METERS)
 
-    def test_the_dashboard_never_reaches_the_internet(self):
+    def test_no_internet(self):
         # The Pi's network has no internet, and data costs: no map tiles, no
         # fonts, no scripts from anywhere else. (The SVG namespace in the
         # page's icon is a name, not a download.)
@@ -133,7 +133,7 @@ class MissionRouteTests(ApiTestCase):
         names = [mission["name"] for mission in self.client.get("/missions").get_json()]
         self.assertEqual(names, ["Second", self.mission["name"]])
 
-    def test_ending_the_mission_twice_is_a_404_the_second_time(self):
+    def test_end_twice_404(self):
         self.assertEqual(self.client.post("/missions/end").status_code, 200)
         self.assertEqual(self.client.post("/missions/end").status_code, 404)
 
@@ -149,7 +149,7 @@ class AlertRouteTests(ApiTestCase):
 
 
 class ReplayRouteTests(ApiTestCase):
-    def test_replay_shows_the_mission_as_it_stood_at_each_reading(self):
+    def test_replay(self):
         self.post(payload(sample_id="boat-r-1"))
         self.post(payload(sample_id="boat-r-2", millivolts=RISKY))
         self.post(payload(sample_id="boat-r-3"))
@@ -171,7 +171,7 @@ class ReplayRouteTests(ApiTestCase):
         self.assertFalse(any(alert["acknowledged"] for alert in during["alerts"]), "acknowledged later: still open then")
         self.assertEqual(during["summary"]["risk"], analysis.rollup([during["cells"][0]["risk"]]))
 
-    def test_an_unknown_mission_or_reading_is_a_404(self):
+    def test_unknown_is_404(self):
         self.post(payload())
         reading_id = database.mission_readings(self.mission["id"])[0]["id"]
         other = database.start_mission()
@@ -237,7 +237,7 @@ class DocumentTests(unittest.TestCase):
     def setUp(self):
         use_rules_only(self)
 
-    def test_a_reading_carries_its_values_and_its_risk(self):
+    def test_reading_fields(self):
         reading = document([stored(1, risk=64)])["readings"][0]
 
         self.assertEqual(reading["id"], 1)
@@ -248,12 +248,12 @@ class DocumentTests(unittest.TestCase):
         # Small on purpose: 500 of these go out on every poll.
         self.assertLess(len(json.dumps(reading)), 500)
 
-    def test_the_sensors_and_the_ladder_come_from_config(self):
+    def test_sensors_and_levels_from_config(self):
         body = document([])
         self.assertEqual([sensor["key"] for sensor in body["sensors"]], [sensor.key for sensor in config.SENSORS])
         self.assertEqual([level["label"] for level in body["riskLevels"]], ["Low", "Moderate", "High", "Severe"])
 
-    def test_cells_cover_the_whole_mission_but_only_the_newest_readings_are_sent(self):
+    def test_cells_cover_whole_mission(self):
         early = [stored(index, risk=90, latitude=42.30, seconds_ago=3600) for index in range(1, 4)]
         late = [stored(index, risk=10, seconds_ago=60) for index in range(4, 7)]
         with mock.patch.object(config, "DASHBOARD_READINGS", 3):
@@ -264,12 +264,12 @@ class DocumentTests(unittest.TestCase):
         self.assertEqual(body["mission"]["readingCount"], 6)
         self.assertGreater(body["summary"]["risk"], 50)
 
-    def test_readings_without_a_fix_count_but_are_not_mapped(self):
+    def test_unlocated_readings(self):
         body = document([stored(1, risk=60, latitude=None)])
         self.assertEqual(body["cells"], [])
         self.assertIsNone(body["readings"][0]["cell"])
 
-    def test_no_mission_and_an_empty_mission_both_render(self):
+    def test_empty_states_render(self):
         for body in (routes.dashboard_document(None, [], now=NOW), document([])):
             self.assertEqual(body["summary"]["basis"], "none")
             self.assertFalse(body["boat"]["online"])
@@ -285,14 +285,14 @@ class OneNumberTests(unittest.TestCase):
     def setUp(self):
         self.model_folder = use_rules_only(self)
 
-    def test_building_the_dashboard_never_scores_anything(self):
+    def test_dashboard_never_scores(self):
         rows = [stored(index, risk=40 + index, latitude=42.28 + index / 1000) for index in range(1, 5)]
         with mock.patch.object(processing, "score", side_effect=AssertionError("re-scored")), \
                 mock.patch.object(processing, "score_with_rules", side_effect=AssertionError("re-scored")):
             body = document(rows)
         self.assertEqual(len(body["cells"]), 4)
 
-    def test_a_cell_is_the_rollup_of_the_readings_inside_it(self):
+    def test_cell_rollup(self):
         body = document([stored(1, risk=90), stored(2, risk=10)])
         cell = body["cells"][0]
         inside = [reading["risk"] for reading in body["readings"] if reading["cell"] == cell["id"]]

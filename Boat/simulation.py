@@ -7,20 +7,19 @@ import config
 
 # Millivolts: (centre, random spread either side).
 MILLIVOLTS = {
-    "ph": (1470, 160),
+    "ph": (1460, 90),
     "temperature": (720, 80),
-    "turbidity": (2750, 450),
-    "conductivity": (1250, 350),
-    # About 1 mg/L nitrate and 0.1 mg/L ammonium with the starting calibration.
-    "nitrate": (1560, 25),
-    "ammonium": (1560, 25),
+    "turbidity": (2799, 1),
+    "conductivity": (82, 25),
+    "nitrate": (1705, 25),
+    "ammonium": (1595, 25),
 }
 
 # Occasional bloom or runoff events: (chance per reading, millivolt shift).
 EVENTS = {
-    "turbidity": (0.18, -850),
+    "turbidity": (0.18, -8),
     "nitrate": (0.16, -45),
-    "ammonium": (0.16, -45),
+    "ammonium": (0.16, 45),
 }
 
 # Different periods per axis, so the track wanders instead of circling.

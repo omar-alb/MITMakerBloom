@@ -13,7 +13,7 @@ def overview(readings):
 
 
 class LadderTests(unittest.TestCase):
-    def test_every_score_lands_on_exactly_one_level(self):
+    def test_one_level_per_score(self):
         mins = [rung["min"] for rung in config.RISK_LEVELS]
         self.assertEqual(mins[0], 0)
         self.assertEqual(mins, sorted(set(mins)))
@@ -27,21 +27,21 @@ class LadderTests(unittest.TestCase):
         for tenths in range(0, 1001):
             self.assertEqual(analysis.level(tenths / 10), analysis.level(round(tenths / 10)))
 
-    def test_alert_levels_are_levels_on_the_ladder(self):
+    def test_alert_levels_exist(self):
         labels = [rung["label"] for rung in config.RISK_LEVELS]
         self.assertTrue(set(config.ALERT_LEVELS) <= set(labels))
         self.assertIn(config.SENSOR_ALERT_LEVEL, labels)
         self.assertFalse(analysis.is_alert(50))
         self.assertTrue(analysis.is_alert(51))
 
-    def test_a_rollup_blends_the_mean_with_the_peak(self):
+    def test_rollup(self):
         self.assertEqual(analysis.rollup([]), 0)
         self.assertEqual(analysis.rollup([40]), 40)
         self.assertEqual(analysis.rollup([10, 90]), round(50 + 40 * config.ROLLUP_PEAK_SHARE))
 
 
 class AlertTests(unittest.TestCase):
-    def test_a_bloom_alert_quotes_the_risk_that_raised_it(self):
+    def test_bloom_alert(self):
         raised = analysis.alerts_for(stored(1, risk=92, drivers=["warm water", "high pH"]))
         self.assertEqual([alert["kind"] for alert in raised], ["bloom"])
         self.assertEqual(raised[0]["level"], "Severe")
@@ -54,7 +54,7 @@ class AlertTests(unittest.TestCase):
     def test_an_unlocated_alert_says_so(self):
         self.assertIn("(no GPS fix)", analysis.alerts_for(stored(1, risk=90, latitude=None))[0]["message"])
 
-    def test_sensor_alerts_fire_at_their_thresholds(self):
+    def test_sensor_alerts(self):
         threshold = next(sensor.alert_at for sensor in config.SENSORS if sensor.key == "turbidity")
         self.assertEqual([a["kind"] for a in analysis.alerts_for(stored(1, turbidity=threshold))], ["turbidity"])
         self.assertEqual(analysis.alerts_for(stored(1, turbidity=threshold - 0.1)), [])
@@ -62,7 +62,7 @@ class AlertTests(unittest.TestCase):
 
 
 class CellTests(unittest.TestCase):
-    def test_cells_stay_square_wherever_the_boat_launches(self):
+    def test_cells_square(self):
         for latitude, longitude in ((42.36, -71.06), (47.61, -122.33), (-33.86, 151.21)):
             key = analysis.cell_id(latitude, longitude, latitude)
             (south, west), (north, east) = analysis.cell_bounds(key, latitude)
@@ -71,19 +71,19 @@ class CellTests(unittest.TestCase):
             self.assertAlmostEqual(height, config.CELL_SIZE_METERS, delta=0.5)
             self.assertAlmostEqual(width, config.CELL_SIZE_METERS, delta=0.5)
 
-    def test_a_cell_contains_the_readings_that_made_it(self):
+    def test_cell_contains_readings(self):
         cell = analysis.build_cells([stored(1)], HERE[0])[0]
         (south, west), (north, east) = cell["bounds"]
         self.assertTrue(south <= HERE[0] <= north and west <= HERE[1] <= east)
 
-    def test_a_cell_is_the_rollup_of_the_readings_inside_it(self):
+    def test_cell_rollup(self):
         cell = analysis.build_cells([stored(1, risk=90), stored(2, risk=10)], HERE[0])[0]
         self.assertEqual((cell["risk"], cell["peak"], cell["readings"]), (analysis.rollup([90, 10]), 90, 2))
         self.assertEqual(cell["level"], analysis.level(cell["risk"]))
 
 
 class HotspotTests(unittest.TestCase):
-    def test_nearby_alert_level_readings_form_one_hotspot_and_quiet_ones_none(self):
+    def test_hotspot_clustering(self):
         near = config.HOTSPOT_JOIN_METERS / 2 / analysis.METERS_PER_DEGREE_LATITUDE  # half the join distance
         rows = [
             stored(1, risk=80, latitude=42.2800),
@@ -97,7 +97,7 @@ class HotspotTests(unittest.TestCase):
         self.assertEqual({spot["level"] for spot in spots}, {"Severe"})
         self.assertTrue(all(spot["radius"] >= config.HOTSPOT_MIN_RADIUS_METERS for spot in spots))
 
-    def test_hotspots_are_ordered_for_revisiting_and_the_first_few_numbered(self):
+    def test_hotspot_order(self):
         rows = [stored(index, risk=90, latitude=42.28 + index * 0.01, seconds_ago=60) for index in range(8)]
         spots = analysis.build_hotspots(rows, NOW)
 
@@ -113,34 +113,34 @@ class HotspotTests(unittest.TestCase):
 
 
 class OverviewTests(unittest.TestCase):
-    def test_the_headline_is_the_rollup_of_the_cells(self):
+    def test_headline_from_cells(self):
         summary = overview([stored(1, risk=80), stored(2, risk=20, latitude=42.29)])["summary"]
         self.assertEqual((summary["basis"], summary["counted"]), ("cells", 2))
         self.assertEqual(summary["risk"], analysis.rollup([80, 20]))
         self.assertEqual(summary["alertCells"], 1)
         self.assertEqual([level["count"] for level in summary["distribution"]], [1, 0, 0, 1])
 
-    def test_without_any_fix_the_headline_rolls_up_the_readings(self):
+    def test_headline_without_fix(self):
         result = overview([stored(1, risk=60, latitude=None), stored(2, risk=30, latitude=None)])
         self.assertEqual((result["cells"], result["hotspots"]), ([], []))
         self.assertEqual(result["summary"]["basis"], "readings")
         self.assertEqual(result["summary"]["risk"], analysis.rollup([60, 30]))
 
-    def test_an_empty_mission_has_a_quiet_overview(self):
+    def test_empty_mission(self):
         result = overview([])
         self.assertEqual((result["summary"]["basis"], result["summary"]["peak"]), ("none", None))
         self.assertFalse(result["boat"]["online"])
 
-    def test_the_boat_is_online_while_it_is_being_heard_from(self):
+    def test_boat_online(self):
         self.assertTrue(overview([stored(1, seconds_ago=5)])["boat"]["online"])
         self.assertFalse(overview([stored(1, seconds_ago=config.BOAT_OFFLINE_AFTER_SECONDS + 1)])["boat"]["online"])
 
-    def test_a_backlog_arriving_now_counts_as_online(self):
+    def test_backlog_counts_online(self):
         # Taken an hour ago, but sent just now from the outbox.
         late = stored(1, seconds_ago=3600, received_at=NOW.isoformat())
         self.assertTrue(overview([late])["boat"]["online"])
 
-    def test_gps_and_probe_state_come_from_the_latest_reading(self):
+    def test_status_from_latest(self):
         boat = overview([stored(1), stored(2, latitude=None, hardware="partial")])["boat"]
         self.assertEqual((boat["gps"], boat["hardware"]), ("no_fix", "partial"))
 

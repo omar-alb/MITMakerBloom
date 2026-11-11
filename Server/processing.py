@@ -7,8 +7,8 @@ The boat sends raw probe millivolts and its GPS state:
       "sample_id": "boat-3f9a1c0d7b2e-17",
       "age_seconds": 12.5,
       "hardware": "ok",
-      "millivolts": {"ph": 1450.0, "temperature": 720.0, "turbidity": 2600.0, "conductivity": 2100.0,
-                     "nitrate": 1560.0, "ammonium": 1560.0},
+      "millivolts": {"ph": 1450.0, "temperature": 720.0, "turbidity": 2799.0, "conductivity": 82.0,
+                     "nitrate": 1705.0, "ammonium": 1595.0},
       "gps": {"status": "fix", "latitude": 42.36003, "longitude": -71.09413}
     }
 
@@ -58,6 +58,10 @@ def process(payload, now=None):
     millivolts = _millivolts(payload.get("millivolts"))
     gps, latitude, longitude = _gps(payload.get("gps"))
     taken_at = now - timedelta(seconds=_age(payload.get("age_seconds")))
+    units = to_units(millivolts)
+    hardware = payload.get("hardware") if payload.get("hardware") in HARDWARE_STATUSES else "unknown"
+    if hardware == "ok" and any(units[key] is None for key in millivolts):
+        hardware = "partial"
 
     row = {
         "sample_id": sample_id,
@@ -67,8 +71,8 @@ def process(payload, now=None):
         "latitude": latitude,
         "longitude": longitude,
         "gps": gps,
-        "hardware": payload.get("hardware") if payload.get("hardware") in HARDWARE_STATUSES else "unknown",
-        **to_units(millivolts),
+        "hardware": hardware,
+        **units,
         "millivolts": millivolts,
     }
     row.update(score(row))
@@ -146,7 +150,9 @@ def _number(value):
 
 
 def to_units(millivolts):
-    """Every sensor's value in its unit, rounded to its digits; None if it did not report."""
+    """Every sensor's value in its unit; None if missing or out of range."""
+    low, high = config.PROBE_VALID_MV
+    millivolts = {key: mv for key, mv in millivolts.items() if low <= mv <= high}
     temperature = _temperature(millivolts.get("temperature"))
     values = {
         "temperature": temperature,
@@ -176,13 +182,13 @@ def _temperature(mv):
     if mv is None:
         return None
     zero = 0.0 if config.TEMPERATURE_SENSOR == "lm35" else TMP36_ZERO_MV
-    return _clamp((mv - zero) / MV_PER_DEGREE, *config.TEMPERATURE_RANGE_C)
+    return _within((mv - zero) / MV_PER_DEGREE, *config.TEMPERATURE_RANGE_C)
 
 
 def _ph(mv):
     if mv is None:
         return None
-    return _clamp(config.PH_REFERENCE_PH + (mv - config.PH_REFERENCE_MV) / config.PH_MV_PER_PH, *PH_SCALE)
+    return _within(config.PH_REFERENCE_PH + (mv - config.PH_REFERENCE_MV) / config.PH_MV_PER_PH, *PH_SCALE)
 
 
 def _turbidity(mv):
@@ -207,13 +213,17 @@ def _ion_selective(mv, reference_mv, reference_mg_l, mv_per_decade):
     if mv is None:
         return None
     # Nernst: every mv_per_decade is a tenfold change.
-    limit = config.ION_SELECTIVE_MAX_DECADES
-    decades = _clamp((mv - reference_mv) / mv_per_decade, -limit, limit)
-    return _clamp(reference_mg_l * 10**decades, 0, config.ION_SELECTIVE_MAX_MG_L)
+    decades = _within((mv - reference_mv) / mv_per_decade, -config.ION_SELECTIVE_MAX_DECADES, config.ION_SELECTIVE_MAX_DECADES)
+    return None if decades is None else _within(reference_mg_l * 10**decades, 0, config.ION_SELECTIVE_MAX_MG_L)
 
 
 def _clamp(value, low, high):
     return min(high, max(low, value))
+
+
+def _within(value, low, high):
+    """The value, or None outside low-high."""
+    return value if low <= value <= high else None
 
 
 # ---------------------------------------------------------------------------

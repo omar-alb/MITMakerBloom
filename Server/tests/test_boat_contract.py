@@ -27,14 +27,14 @@ def load_boat_file(name):
 
 
 class BoatContractTests(unittest.TestCase):
-    def test_every_probe_the_boat_reads_is_a_sensor_the_server_converts(self):
+    def test_probes_known_to_server(self):
         self.assertLessEqual(set(load_boat_file("config").PROBES), SERVER_SENSORS)
 
-    def test_the_bench_simulation_covers_every_server_sensor(self):
+    def test_simulation_covers_sensors(self):
         # So uncommenting a probe in Boat/config.py never breaks a bench demo.
         self.assertEqual(set(load_boat_file("simulation").MILLIVOLTS), SERVER_SENSORS)
 
-    def test_a_reading_from_the_boat_code_is_stored_as_sent(self):
+    def test_boat_reading_stored(self):
         use_rules_only(self)
         script = (
             "import json, config\n"

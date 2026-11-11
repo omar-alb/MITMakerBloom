@@ -29,7 +29,7 @@ class MissionTests(unittest.TestCase):
     def setUp(self):
         use_scratch_database(self)
 
-    def test_starting_a_mission_ends_the_active_one(self):
+    def test_start_ends_active(self):
         first = database.start_mission()
         second = database.start_mission("Inlet transect")
 
@@ -38,24 +38,24 @@ class MissionTests(unittest.TestCase):
         self.assertEqual(database.active_mission()["id"], second["id"])
         self.assertEqual([m["id"] for m in database.list_missions()], [second["id"], first["id"]])
 
-    def test_automatic_names_stay_unique_through_quick_restarts(self):
+    def test_automatic_names_unique(self):
         names = [database.start_mission()["name"] for _ in range(4)]
         self.assertEqual(len(set(names)), 4)
         self.assertTrue(names[1].endswith("(2)"))
 
-    def test_a_taken_name_is_refused_and_nothing_changes(self):
+    def test_taken_name_refused(self):
         active = database.start_mission("Shoreline sweep")
         with self.assertRaises(database.MissionNameTaken):
             database.start_mission("shoreline SWEEP")
         self.assertEqual(database.active_mission()["id"], active["id"])
 
-    def test_ending_twice_ends_nothing_the_second_time(self):
+    def test_end_twice(self):
         database.start_mission()
         self.assertIsNotNone(database.end_mission())
         self.assertIsNone(database.end_mission())
         self.assertIsNone(database.active_mission())
 
-    def test_resume_keeps_the_active_mission_or_starts_one(self):
+    def test_resume(self):
         started = database.resume_mission()
         self.assertEqual(database.resume_mission()["id"], started["id"])
 
@@ -74,17 +74,17 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(database.count_readings(mission_id), 1)
         self.assertNotEqual(database.mission_readings(mission_id)[0]["risk"], 99)
 
-    def test_readings_without_a_sample_id_are_never_merged(self):
+    def test_no_sample_id_not_merged(self):
         database.save_reading(row())
         database.save_reading(row())
         self.assertEqual(database.count_readings(database.active_mission()["id"]), 2)
 
-    def test_a_reading_with_no_active_mission_starts_one(self):
+    def test_reading_starts_mission(self):
         self.assertIsNone(database.active_mission())
         database.save_reading(row())
         self.assertIsNotNone(database.active_mission())
 
-    def test_lists_and_dicts_come_back_as_they_went_in(self):
+    def test_json_round_trip(self):
         database.save_reading(row(drivers=["warm water"]))
         mission_id = database.active_mission()["id"]
         stored = database.mission_readings(mission_id)[0]
@@ -92,7 +92,7 @@ class ReadingTests(unittest.TestCase):
         self.assertNotIn("millivolts", stored)  # the dashboard does not need them
         self.assertEqual(next(database.each_reading(mission_id))["millivolts"]["ph"], 1450.0)
 
-    def test_mission_readings_are_the_newest_oldest_first(self):
+    def test_newest_oldest_first(self):
         for risk in range(12):
             database.save_reading(row(risk=risk))
         mission_id = database.active_mission()["id"]
@@ -100,14 +100,14 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual([r["risk"] for r in database.mission_readings(mission_id, limit=5)], list(range(7, 12)))
         self.assertEqual([r["risk"] for r in database.each_reading(mission_id, batch_size=5)], list(range(12)))
 
-    def test_the_first_fix_sizes_the_grid_and_later_ones_leave_it(self):
+    def test_first_fix_sets_grid(self):
         database.save_reading(row(latitude=None, longitude=None, gps="no_fix"))
         self.assertIsNone(database.active_mission()["grid_latitude"])
         database.save_reading(row())
         database.save_reading(row(latitude=HERE[0] + 0.1))
         self.assertEqual(database.active_mission()["grid_latitude"], HERE[0])
 
-    def test_a_new_sensor_gets_its_column_on_the_next_start(self):
+    def test_new_sensor_column(self):
         extra = config.Sensor("oxygen", "Dissolved oxygen", "mg/L", 1, 0.0, 6.0, 2.0, "low oxygen")
         with mock.patch.object(config, "SENSORS", config.SENSORS + (extra,)), \
                 mock.patch.object(database, "SENSOR_KEYS", database.SENSOR_KEYS + ["oxygen"]):
@@ -126,12 +126,12 @@ class AlertTests(unittest.TestCase):
         self.assertEqual([alert["kind"] for alert in saved], ["bloom", "turbidity"])
         self.assertTrue(all(alert["reading_id"] == reading_id for alert in saved))
 
-    def test_a_resent_reading_raises_no_second_alert(self):
+    def test_resend_no_second_alert(self):
         database.save_reading(row(sample_id="boat-a1-9"), [bloom_alert()])
         database.save_reading(row(sample_id="boat-a1-9"), [bloom_alert()])
         self.assertEqual(len(database.mission_alerts(database.active_mission()["id"])), 1)
 
-    def test_upto_gives_the_readings_and_alerts_up_to_a_reading(self):
+    def test_upto(self):
         ids = [database.save_reading(row(), [bloom_alert()])[0] for _ in range(4)]
         mission_id = database.active_mission()["id"]
         self.assertEqual([r["id"] for r in database.mission_readings(mission_id, upto=ids[1])], ids[:2])
@@ -158,13 +158,13 @@ class TwoFileTests(unittest.TestCase):
         use_scratch_database(self)
         use_rules_only(self)
 
-    def test_bloomdata_db_holds_only_the_measurements(self):
+    def test_bloomdata_only_measurements(self):
         sensors = [sensor.key for sensor in config.SENSORS]
         self.assertEqual(columns(config.READINGS_DATABASE, "readings"), ["id", "mission_id", "taken_at", "latitude", "longitude", *sensors])
         with sqlite3.connect(config.READINGS_DATABASE) as db:
             self.assertEqual([r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")], ["readings"])
 
-    def test_bloomdata_db_holds_values_in_their_units_not_millivolts(self):
+    def test_bloomdata_in_units(self):
         sent = row()
         database.save_reading(sent)
         with sqlite3.connect(config.READINGS_DATABASE) as db:
@@ -175,13 +175,13 @@ class TwoFileTests(unittest.TestCase):
         for sensor in config.SENSORS:
             self.assertEqual(measured[sensor.key], units[sensor.key], sensor.key)
         self.assertEqual(measured["temperature"], 22.0)  # 720 mV from a TMP36 is 22.0 °C
-        self.assertEqual(measured["ph"], 7.85)  # 1450 mV, against a 1500 mV pH 7 buffer
+        self.assertEqual(measured["ph"], 7.28)  # 1450 mV, against a 1500 mV pH 7 buffer
         self.assertIsNone(measured["nitrate"])  # did not report: missing, not zero
         # The millivolts themselves are kept, in missions.db, for recalibrating later.
         with sqlite3.connect(config.MISSIONS_DATABASE) as db:
             self.assertEqual(json.loads(db.execute("SELECT millivolts FROM reading_details").fetchone()[0])["ph"], 1450.0)
 
-    def test_missions_db_points_at_readings_by_their_id(self):
+    def test_missions_db_links_by_id(self):
         reading_id, _ = database.save_reading(row(sample_id="boat-a1-1", risk=64), [bloom_alert()])
 
         with sqlite3.connect(config.READINGS_DATABASE) as db:
@@ -198,7 +198,7 @@ class TwoFileTests(unittest.TestCase):
         stored = database.mission_readings(database.active_mission()["id"])[0]
         self.assertEqual((stored["id"], stored["risk"], stored["sample_id"]), (reading_id, 64, "boat-a1-1"))
 
-    def test_a_reading_is_stored_in_both_files_or_in_neither(self):
+    def test_both_files_or_neither(self):
         broken_alert = {"kind": "bloom"}  # no level, title, or message: fails after both inserts
         with self.assertRaises(KeyError):
             database.save_reading(row(sample_id="boat-a1-2"), [broken_alert])

@@ -29,7 +29,7 @@ class ConfigTests(unittest.TestCase):
             set(config.PROBES), {"ph", "temperature", "turbidity", "conductivity", "nitrate", "ammonium"}
         )
 
-    def test_every_probe_is_on_its_own_input_of_a_configured_board(self):
+    def test_probe_inputs_are_unique(self):
         inputs = list(config.PROBES.values())
         self.assertEqual(len(inputs), len(set(inputs)))
         for board, channel in inputs:
@@ -47,7 +47,7 @@ class ProbeTests(unittest.TestCase):
     def boards(self, *readers):
         sensors._boards = [mock.Mock(read_volts=reader) for reader in readers]
 
-    def test_every_wired_probe_is_read_in_millivolts(self):
+    def test_reads_millivolts(self):
         self.boards(lambda channel: 1.0 + channel / 10, lambda channel: 2.0 + channel / 10)
         millivolts, hardware = sensors.read_probes()
         self.assertEqual(millivolts, {
@@ -56,7 +56,7 @@ class ProbeTests(unittest.TestCase):
         })
         self.assertEqual(hardware, "ok")
 
-    def test_a_probe_that_does_not_answer_is_left_out_not_the_whole_reading(self):
+    def test_silent_probe_left_out(self):
         def flaky(channel):
             if channel == 2:
                 raise OSError("I2C error")
@@ -77,7 +77,7 @@ class ProbeTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             sensors.read_probes()
 
-    def test_without_the_machine_module_the_probes_cannot_open(self):
+    def test_no_machine_module(self):
         with self.assertRaises(RuntimeError):
             sensors.read_probes()
 
@@ -98,25 +98,25 @@ class Ads1115Tests(unittest.TestCase):
         self.assertGreaterEqual(waits[8], 125)
         self.assertLess(waits[860], 10)
 
-    def test_a_negative_count_reads_as_negative_volts(self):
+    def test_negative_count(self):
         bus = mock.Mock()
         bus.readfrom.return_value = bytes([0xFF, 0xFF])
         self.assertLess(sensors.ADS1115(bus, 0x48).read_volts(1), 0)
 
 
 class RequestBodyTests(unittest.TestCase):
-    def test_private_outbox_fields_stay_on_the_boat(self):
+    def test_private_fields_not_sent(self):
         body = main.request_body(main.stamp({"device": "boat"}))
         self.assertNotIn("_boot", body)
         self.assertNotIn("_taken_ms", body)
         self.assertTrue(body["sample_id"].startswith(config.DEVICE_NAME + "-" + main.BOOT_ID + "-"))
 
-    def test_a_waiting_reading_says_how_long_ago_it_was_taken(self):
+    def test_age_seconds(self):
         reading = main.stamp({})
         reading["_taken_ms"] -= 42_000
         self.assertAlmostEqual(main.request_body(reading)["age_seconds"], 42.0, delta=1.0)
 
-    def test_a_reading_from_before_a_reboot_sends_no_age(self):
+    def test_no_age_after_reboot(self):
         # The tick counter restarted, so its age is unknown; the server then
         # uses the arrival time rather than a wrong one.
         reading = main.stamp({})
@@ -126,7 +126,7 @@ class RequestBodyTests(unittest.TestCase):
     def test_sample_ids_are_unique(self):
         self.assertEqual(len({main.stamp({})["sample_id"] for _ in range(50)}), 50)
 
-    def test_a_simulated_reading_has_every_probe_and_a_position(self):
+    def test_simulated_reading(self):
         with mock.patch.object(config, "SIMULATE_HARDWARE", True):
             reading = main.take_reading()
         self.assertEqual(set(reading["millivolts"]), set(config.PROBES))
@@ -143,11 +143,11 @@ class SendTests(unittest.TestCase):
     def test_2xx_is_sent(self):
         self.assertEqual(self.send_with_status(200), outbox.SENT)
 
-    def test_a_refused_reading_is_not_retried_forever(self):
+    def test_refused_not_retried(self):
         for status in (400, 404, 413):
             self.assertEqual(self.send_with_status(status), outbox.REJECTED)
 
-    def test_server_trouble_and_try_again_later_are_retried(self):
+    def test_server_trouble_retried(self):
         for status in (500, 503, 408, 429):
             self.assertEqual(self.send_with_status(status), outbox.FAILED)
 
@@ -167,7 +167,7 @@ class CycleTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def test_the_outbox_still_empties_when_the_probes_fail(self):
+    def test_outbox_empties_when_probes_fail(self):
         outbox.add({"n": 1})
         outbox.add({"n": 2})
         with mock.patch.object(main, "take_reading", side_effect=RuntimeError("No probe answered.")), \
@@ -175,7 +175,7 @@ class CycleTests(unittest.TestCase):
             self.assertTrue(main.run_cycle())
         self.assertEqual(outbox.count(), 0)
 
-    def test_without_wifi_readings_wait_in_the_outbox(self):
+    def test_no_wifi_keeps_readings(self):
         with mock.patch.object(main, "take_reading", return_value={"device": "boat"}), \
                 mock.patch.object(main, "wifi_ready", return_value=False):
             self.assertFalse(main.run_cycle())

@@ -69,8 +69,8 @@ get their arrival time.
   "sample_id": "boat-3f9a1c0d7b2e-17",
   "age_seconds": 12.5,
   "hardware": "ok",
-  "millivolts": {"ph": 1450.0, "temperature": 720.0, "turbidity": 2600.0, "conductivity": 2100.0,
-                 "nitrate": 1560.0, "ammonium": 1560.0},
+  "millivolts": {"ph": 1450.0, "temperature": 720.0, "turbidity": 2799.0, "conductivity": 82.0,
+                 "nitrate": 1705.0, "ammonium": 1595.0},
   "gps": {"status": "fix", "latitude": 42.36003, "longitude": -71.09413}
 }
 ```
@@ -144,7 +144,8 @@ A sensor added to `SENSORS` gets its column at the next start.
 ## The bloom risk
 
 **Rules** (`score_with_rules`): each sensor ramps from 0 at `low` to 100 at
-`high`, and the risk is their weighted average. Missing sensors are left out.
+`high`, and the risk is their weighted average. Missing or out-of-range sensors are left out
+(and mark the reading `partial`).
 If the reporting sensors carry less than `FULL_EVIDENCE_SHARE` (0.5) of the
 weight, the result is scaled down, so one probe alone can't raise an alert.
 The four core probes alone carry 0.70.

@@ -40,7 +40,7 @@ class StartTests(unittest.TestCase):
     def as_user(self, user_id):
         return mock.patch.object(app.os, "geteuid", return_value=user_id, create=True)
 
-    def test_dev_serves_on_any_computer_without_touching_the_network(self):
+    def test_dev_mode(self):
         app.main(["--dev"])
         app.routes.app.run.assert_called_once_with(host=config.HOST, port=config.DEV_PORT, threaded=True, use_reloader=False)
         self.assertEqual(self.commands(), [])
@@ -50,7 +50,7 @@ class StartTests(unittest.TestCase):
         app.main(["--dev", "--port", "8080"])
         self.assertEqual(app.routes.app.run.call_args.kwargs["port"], 8080)
 
-    def test_the_field_needs_root_and_says_what_to_run_instead(self):
+    def test_field_needs_root(self):
         with self.as_user(1000), self.assertRaises(SystemExit) as stopped:
             app.main([])
         self.assertIn("--dev", str(stopped.exception))
@@ -61,7 +61,7 @@ class StartTests(unittest.TestCase):
             app.main([])
         self.assertEqual(self.commands(), [])
 
-    def test_the_field_brings_the_network_up_and_takes_it_down_on_the_way_out(self):
+    def test_field_network_up_and_down(self):
         app.routes.app.run.side_effect = KeyboardInterrupt  # Ctrl-C while serving
         with self.as_user(0), mock.patch.object(config, "WIFI_PASSWORD", "harbor-crew-7"):
             app.main([])
