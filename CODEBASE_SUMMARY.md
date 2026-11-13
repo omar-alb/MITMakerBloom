@@ -21,7 +21,7 @@ database, and how the risk is worked out. Hardware is in
 ```text
 Boat/sensors.py       millivolts from each probe
 Boat/gps.py           the position
-Boat/main.py          adds a sample_id, saves to the outbox, POSTs it with age_seconds
+Boat/main.py          averages 10 s of both, adds a sample_id, saves to the outbox, POSTs it with age_seconds
         |  Wi-Fi
         v
 Server/routes.py      POST /readings
@@ -37,7 +37,7 @@ Server/web/dashboard.js   polls GET /dashboard; routes.py builds it with analysi
 
 | File | What it does |
 |---|---|
-| `main.py` | The loop, run at boot: read, save to the outbox, send what Wi-Fi allows. `send()` maps the HTTP answer to SENT (2xx), REJECTED (4xx except 408/429, dropped) or FAILED (kept). |
+| `main.py` | The loop, run at boot: read the probes and GPS over and over, average them each interval (temporary, until the sensors are reworked), save to the outbox, send what Wi-Fi allows. `send()` maps the HTTP answer to SENT (2xx), REJECTED (4xx except 408/429, dropped) or FAILED (kept). |
 | `config.py` | Every boat setting. |
 | `sensors.py` | ADS1115 driver and `read_probes()`. A probe that doesn't answer is left out (`partial`). |
 | `gps.py` | `read_position()`: NMEA GGA/RMC with checksum and lock checks; reuses the last fix as `stale` for up to `GPS_STALE_LIMIT_SECONDS`. |

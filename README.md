@@ -18,9 +18,9 @@ Thank you, I hope you like my project!
 A field system for finding and mapping possible harmful algal blooms.
 
 A small boat carries six water-quality probes and a GPS. Every 10 seconds it
-sends a reading over Wi-Fi to a Raspberry Pi, which scores the bloom risk,
-stores it, and serves a live map and dashboard to any phone or laptop on its
-network.
+sends a reading (the average of those 10 seconds) over Wi-Fi to a Raspberry
+Pi, which scores the bloom risk, stores it, and serves a live map and
+dashboard to any phone or laptop on its network.
 
 ```text
   Boat (ESP32)                      Server (Raspberry Pi)                 Dashboard (browser)

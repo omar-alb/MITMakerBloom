@@ -315,10 +315,10 @@ const PARTS = {
 const FILES = [
     // Boat
     {
-        path: "Boat/main.py", part: "boat", lines: 270,
+        path: "Boat/main.py", part: "boat", lines: 323,
         summary: "The boat's program. MicroPython runs it at boot, and it loops forever: take a reading, keep it in the outbox, send it.",
         details: [
-            "Every 10 s (READING_INTERVAL_SECONDS) it reads the probes and the GPS.",
+            "Reads the probes and the GPS over and over, and every 10 s (READING_INTERVAL_SECONDS) averages them into one reading. Temporary, until the sensors are reworked.",
             "Gives each reading a unique sample_id (boat name, boot id, count), so the server can ignore a resend.",
             "Saves the reading to the outbox first, then sends waiting readings oldest-first to POST /readings.",
             "Adds age_seconds when sending, so a reading sent late keeps the time it was taken.",
@@ -329,11 +329,12 @@ const FILES = [
         links: ["Boat/sensors.py", "Boat/gps.py", "Boat/outbox.py", "Boat/config.py", "Server/routes.py"],
     },
     {
-        path: "Boat/config.py", part: "boat", lines: 69,
+        path: "Boat/config.py", part: "boat", lines: 73,
         summary: "Every boat setting, each with a comment, edited by hand before copying to the board.",
         details: [
             "DEVICE_NAME, the Wi-Fi network and password, SERVER_URL.",
             "How often to take a reading, HTTP and Wi-Fi timing, and how much of each interval may go on sending a backlog.",
+            "The temporary averaging: the pause between probe passes and how often to read the GPS.",
             "How much the outbox may hold, and its batch size.",
             "PROBES: which probe is on which ADS1115 input (only connected probes are listed), and the ADC's range and speed.",
             "The GPS pins (GPIO 16 and 17), and SIMULATE_HARDWARE for bench demos (ships False) with its pond-sized simulated track.",
@@ -544,7 +545,7 @@ const FILES = [
     // Tests
     { path: "Boat/tests/test_gps.py", part: "test", lines: 160, summary: "NMEA parsing, checksums, locks, split lines, stale fixes, a missing GPS.", details: ["Run with: cd Boat && python3 -m unittest discover -s tests"], links: ["Boat/gps.py"] },
     { path: "Boat/tests/test_outbox.py", part: "test", lines: 118, summary: "The outbox: order, outages, refused readings, the time budget, the size cap, power cuts.", details: [], links: ["Boat/outbox.py"] },
-    { path: "Boat/tests/test_boat.py", part: "test", lines: 187, summary: "Config, probes failing one at a time, ADS1115 timing, what is sent, and how answers are handled.", details: [], links: ["Boat/main.py", "Boat/sensors.py"] },
+    { path: "Boat/tests/test_boat.py", part: "test", lines: 250, summary: "Config, probes failing one at a time, ADS1115 timing, averaging, what is sent, and how answers are handled.", details: [], links: ["Boat/main.py", "Boat/sensors.py"] },
     { path: "Server/tests/test_processing.py", part: "test", lines: 418, summary: "Every conversion and validation rule, the rules, and the model plug-in.", details: ["model.json mistakes, column order, missing values, and failures, plus real XGBoost, LightGBM, and scikit-learn gradient-boosted tree models when those are installed.", "Run with: cd Server && python3 -m unittest discover -s tests"], links: ["Server/processing.py"] },
     { path: "Server/tests/test_analysis.py", part: "test", lines: 149, summary: "Levels, roll-ups, alerts, cells, hotspots, the headline, and boat status.", details: [], links: ["Server/analysis.py"] },
     { path: "Server/tests/test_routes.py", part: "test", lines: 340, summary: "The HTTP API end to end, the dashboard document, the CSV, and that every view reads the one stored risk.", details: [], links: ["Server/routes.py"] },
@@ -556,12 +557,12 @@ const FILES = [
 
     // Docs
     { path: "README.md", part: "doc", lines: 140, summary: "What the project is, what is where, how to run it, and how the risk works.", details: [], links: ["HARDWARE_SETUP.md", "CODEBASE_SUMMARY.md"] },
-    { path: "HARDWARE_SETUP.md", part: "doc", lines: 198, summary: "Wiring, flashing the ESP32, calibrating, and running the Pi.", details: [], links: ["README.md"] },
+    { path: "HARDWARE_SETUP.md", part: "doc", lines: 199, summary: "Wiring, flashing the ESP32, calibrating, and running the Pi.", details: [], links: ["README.md"] },
     { path: "CODEBASE_SUMMARY.md", part: "doc", lines: 193, summary: "How the code works: the data flow, every file, the API, the database, the risk in detail.", details: [], links: ["README.md"] },
 ];
 
 const JOURNEY = [
-    { text: "The boat reads its wired probes in millivolts, and its GPS position.", files: ["Boat/sensors.py", "Boat/gps.py"] },
+    { text: "The boat reads its wired probes in millivolts, and its GPS position, over and over for 10 s and averages them.", files: ["Boat/sensors.py", "Boat/gps.py"] },
     { text: "It gives the reading a unique id, saves it in the outbox, and sends it to the Pi over the \"Bloom\" Wi-Fi.", files: ["Boat/main.py", "Boat/outbox.py"] },
     { text: "The server checks it, works out when it was taken, and converts the millivolts into °C, pH, NTU, and µS/cm.", files: ["Server/routes.py", "Server/processing.py"] },
     { text: "It works out the reading's bloom risk once, 0–100, with the gradient-boosted tree model in Server/model/ or, until it is trained, the built-in rules.", files: ["Server/processing.py", "Server/model/README.md"] },

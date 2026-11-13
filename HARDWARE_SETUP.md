@@ -77,7 +77,8 @@ import main; main.main()                # start the loop again
 | `DEVICE_NAME` | recorded with every reading |
 | `WIFI_NAME`, `WIFI_PASSWORD` | the server's network |
 | `SERVER_URL` | `http://10.0.0.1/readings` |
-| `READING_INTERVAL_SECONDS` | 10; at 0.5 m/s that's one reading every 5 m |
+| `READING_INTERVAL_SECONDS` | 10; each reading averages that interval, so at 0.5 m/s it covers about 5 m |
+| `SAMPLE_PAUSE_SECONDS`, `GPS_EVERY_SECONDS` | temporary averaging, until the sensors are reworked |
 | `PROBES`, `ADC_BOARDS`, `I2C_*` | the wiring above |
 | `GPS_RX_PIN`, `GPS_TX_PIN` | the GPS wiring |
 | `OUTBOX_MAX_BYTES` | how much can wait on flash (512 KB, a few hours) |
