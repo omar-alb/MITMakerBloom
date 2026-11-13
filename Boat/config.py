@@ -17,6 +17,10 @@ WIFI_RETRY_SECONDS = 20  # after boot, background reconnect interval
 # Max share of each interval spent sending the backlog.
 SEND_SHARE_OF_INTERVAL = 0.6
 
+# Temporary until the sensors are reworked: readings are averaged over the interval.
+SAMPLE_PAUSE_SECONDS = 0.05
+GPS_EVERY_SECONDS = 2  # GPS reads block, so not every pass
+
 # --- Outbox ----------------------------------------------------------------
 # Readings wait here until the server has them. About 300 bytes each; when
 # full, the oldest are dropped. Rewrites go through a copy, so keep this much

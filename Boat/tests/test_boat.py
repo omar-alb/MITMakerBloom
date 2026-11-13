@@ -134,6 +134,69 @@ class RequestBodyTests(unittest.TestCase):
         self.assertTrue(set(simulation.MILLIVOLTS) >= set(config.PROBES))
 
 
+class AveragingTests(unittest.TestCase):
+    def setUp(self):
+        self.clock = [0]  # each pause = 1 s
+        for patcher in (
+            mock.patch.object(main, "ticks_ms", lambda: self.clock[0]),
+            mock.patch.object(main, "ticks_add", lambda ticks, delta: ticks + delta),
+            mock.patch.object(main.time, "sleep", lambda seconds: self.clock.__setitem__(0, self.clock[0] + 1000)),
+            mock.patch.object(config, "GPS_EVERY_SECONDS", 0),
+            mock.patch.object(config, "GPS_READ_TIMEOUT_MS", 0),
+            mock.patch("builtins.print"),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def take(self, seconds, probes, positions):
+        with mock.patch.object(main.sensors, "read_probes", side_effect=probes), \
+                mock.patch.object(main.gps, "read_position", side_effect=positions):
+            return main.take_reading(seconds)
+
+    @staticmethod
+    def fix(latitude, longitude):
+        return {"status": "fix", "latitude": latitude, "longitude": longitude}
+
+    def test_averaged(self):
+        no_fix = {"status": "no_fix", "latitude": None, "longitude": None}
+        reading = self.take(
+            2,  # passes at 0, 1, 2 s
+            [({"ph": 1000.0, "turbidity": 2700.0}, "ok"), ({"ph": 2000.0}, "partial"),
+             ({"ph": 3000.0, "turbidity": 2800.0}, "ok")],
+            [self.fix(42.0, -71.0), self.fix(42.0002, -71.0004), no_fix],
+        )
+        self.assertEqual(reading["millivolts"], {"ph": 2000.0, "turbidity": 2750.0})
+        self.assertEqual(reading["hardware"], "partial")
+        self.assertEqual(reading["gps"], self.fix(42.0001, -71.0002))
+        self.assertEqual(reading["_taken_ms"], 1000)
+
+    def test_no_fix_sends_last_gps(self):
+        stale = {"status": "stale", "latitude": 42.0, "longitude": -71.0}
+        reading = self.take(1, [({"ph": 1000.0}, "ok")] * 2, [stale, stale])
+        self.assertEqual(reading["gps"], stale)
+
+    def test_no_fix_stops_gps_reads(self):
+        no_fix = {"status": "no_fix", "latitude": None, "longitude": None}
+        with mock.patch.object(main.sensors, "read_probes", return_value=({"ph": 1000.0}, "ok")) as probes, \
+                mock.patch.object(main.gps, "read_position", return_value=no_fix) as position:
+            main.take_reading(5)
+        self.assertEqual(position.call_count, 1)
+        self.assertEqual(probes.call_count, 6)
+
+    def test_zero_seconds_is_one_snapshot(self):
+        reading = self.take(0, [({"ph": 1234.5}, "ok")], [self.fix(42.0, -71.0)])
+        self.assertEqual(reading["millivolts"], {"ph": 1234.5})
+
+    def test_failed_pass_skipped(self):
+        reading = self.take(1, [RuntimeError("No probe answered."), ({"ph": 1500.0}, "ok")],
+                            [self.fix(42.0, -71.0)] * 2)
+        self.assertEqual(reading["millivolts"], {"ph": 1500.0})
+
+    def test_no_probe_answering_is_an_error(self):
+        with self.assertRaises(RuntimeError):
+            self.take(1, [RuntimeError("No probe answered.")] * 2, [self.fix(42.0, -71.0)] * 2)
+
+
 class SendTests(unittest.TestCase):
     def send_with_status(self, status):
         with mock.patch.object(main, "requests", None), \

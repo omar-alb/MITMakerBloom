@@ -44,6 +44,8 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(processing.to_units({"turbidity": config.TURBIDITY_CLEAR_MV})["turbidity"], 0.0)
         dirty = processing.to_units({"turbidity": config.TURBIDITY_DIRTY_MV})["turbidity"]
         self.assertEqual(dirty, config.TURBIDITY_DIRTY_NTU)
+        self.assertEqual(processing.to_units({"turbidity": config.TURBIDITY_CLEAR_MV + 50})["turbidity"], 0.0)
+        self.assertIsNone(processing.to_units({"turbidity": 1750.0})["turbidity"])  # not 1000 NTU
 
     def test_conductivity_not_capped(self):
         # Capping it there would report every brackish or runoff-laden
@@ -69,7 +71,7 @@ class ConversionTests(unittest.TestCase):
     def test_every_sensor_converted(self):
         units = processing.to_units({
             **{sensor.key: 1234.5678 for sensor in config.SENSORS},
-            "temperature": 712.3456, "ph": 2412.3456, "nitrate": 1660.4567, "ammonium": 1660.4567,
+            "temperature": 712.3456, "ph": 2412.3456, "turbidity": 2712.3456, "nitrate": 1660.4567, "ammonium": 1660.4567,
         })
         for sensor in config.SENSORS:
             with self.subTest(sensor=sensor.key):

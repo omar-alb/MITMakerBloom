@@ -196,7 +196,7 @@ def _turbidity(mv):
         return None
     # Linear; the voltage falls as the water gets cloudier.
     share = (config.TURBIDITY_CLEAR_MV - mv) / (config.TURBIDITY_CLEAR_MV - config.TURBIDITY_DIRTY_MV)
-    return _clamp(share, 0, 1) * config.TURBIDITY_DIRTY_NTU
+    return None if share > 1 else max(share, 0) * config.TURBIDITY_DIRTY_NTU
 
 
 def _conductivity(mv, temperature):

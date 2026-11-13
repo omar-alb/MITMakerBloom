@@ -36,10 +36,12 @@ except ImportError:
 
 ticks_ms = getattr(time, "ticks_ms", lambda: int(time.time() * 1000))
 ticks_diff = getattr(time, "ticks_diff", lambda end, start: end - start)
+ticks_add = getattr(time, "ticks_add", lambda ticks, delta: ticks + delta)
 
 MAX_AGE_MS = 6 * 24 * 3600 * 1000  # ticks_diff() is only valid under about six days
 RADIO_SETTLE_SECONDS = 1
-MIN_PAUSE_SECONDS = 0.5
+MIN_SAMPLE_SECONDS = 0.5
+LOCATED = ("fix", "simulated")
 
 
 def _new_boot_id():
@@ -63,20 +65,68 @@ _last_wifi_attempt_ms = None
 # ---------------------------------------------------------------------------
 
 
-def take_reading():
-    """One reading: raw probe millivolts plus the GPS position."""
-    if config.SIMULATE_HARDWARE:
-        millivolts, hardware = simulation.read_probes(config.PROBES), "simulated"
-        position = simulation.read_position()
-    else:
-        millivolts, hardware = sensors.read_probes()
-        position = gps.read_position()
+def take_reading(seconds=0):
+    """Probe millivolts and GPS position, averaged over `seconds` (0 = one snapshot).
+
+    Temporary until the sensors are reworked. With no GPS fix, the last GPS
+    answer is sent as is.
+    """
+    window_ms = int(seconds * 1000)
+    started = ticks_ms()
+    totals, counts, statuses, fixes = {}, {}, set(), []
+    position = last_gps_ms = None
+    while True:
+        try:
+            millivolts, status = _read_probes()
+        except Exception as error:
+            print("Probe pass failed:", error)
+        else:
+            statuses.add(status)
+            for name, value in millivolts.items():
+                totals[name] = totals.get(name, 0.0) + value
+                counts[name] = counts.get(name, 0) + 1
+
+        # GPS reads block, so space them out; after a miss, stop for this window.
+        now = ticks_ms()
+        if position is None or (
+            position["status"] in LOCATED
+            and ticks_diff(now, last_gps_ms) >= config.GPS_EVERY_SECONDS * 1000
+            and ticks_diff(now, started) + config.GPS_READ_TIMEOUT_MS <= window_ms
+        ):
+            position, last_gps_ms = _read_position(), now
+            if position["status"] in LOCATED and position["latitude"] is not None:
+                fixes.append(position)
+
+        if ticks_diff(ticks_ms(), started) >= window_ms:
+            break
+        time.sleep(config.SAMPLE_PAUSE_SECONDS)
+
+    if not totals:
+        raise RuntimeError("No probe answered.")
+    if fixes:
+        position = {
+            "status": fixes[-1]["status"],
+            "latitude": round(sum(fix["latitude"] for fix in fixes) / len(fixes), 6),
+            "longitude": round(sum(fix["longitude"] for fix in fixes) / len(fixes), 6),
+        }
+    elapsed = ticks_diff(ticks_ms(), started)
     return {
         "device": config.DEVICE_NAME,
-        "hardware": hardware,
-        "millivolts": millivolts,
+        "hardware": "partial" if "partial" in statuses else statuses.pop(),
+        "millivolts": {name: round(totals[name] / counts[name], 2) for name in totals},
         "gps": position,
+        "_taken_ms": ticks_add(started, elapsed // 2),  # mid-window
     }
+
+
+def _read_probes():
+    if config.SIMULATE_HARDWARE:
+        return simulation.read_probes(config.PROBES), "simulated"
+    return sensors.read_probes()
+
+
+def _read_position():
+    return simulation.read_position() if config.SIMULATE_HARDWARE else gps.read_position()
 
 
 def stamp(reading):
@@ -85,7 +135,7 @@ def stamp(reading):
     _reading_count += 1
     reading["sample_id"] = "{}-{}-{}".format(config.DEVICE_NAME, BOOT_ID, _reading_count)
     reading["_boot"] = BOOT_ID
-    reading["_taken_ms"] = ticks_ms()
+    reading.setdefault("_taken_ms", ticks_ms())
     return reading
 
 
@@ -232,11 +282,11 @@ def _restart_radio():
 # ---------------------------------------------------------------------------
 
 
-def run_cycle():
+def run_cycle(sample_seconds=0):
     """Take one reading, save it, and send whatever Wi-Fi allows."""
     reading = None
     try:
-        reading = stamp(take_reading())
+        reading = stamp(take_reading(sample_seconds))
     except Exception as error:
         print("Could not take a reading:", error)
 
@@ -255,15 +305,18 @@ def main():
     print("Boat starting. Sending to", config.SERVER_URL)
     outbox.recover()
     connect_wifi()
+    overhead = 0.0  # last cycle's time spent sending
     while True:
+        sample_seconds = max(MIN_SAMPLE_SECONDS, config.READING_INTERVAL_SECONDS - overhead)
         started = ticks_ms()
         try:
-            run_cycle()
+            run_cycle(sample_seconds)
         except Exception as error:
             print("Reading cycle failed:", error)
         gc.collect()
         elapsed = ticks_diff(ticks_ms(), started) / 1000
-        time.sleep(max(MIN_PAUSE_SECONDS, config.READING_INTERVAL_SECONDS - elapsed))
+        overhead = min(config.READING_INTERVAL_SECONDS, max(0.0, elapsed - sample_seconds))
+        time.sleep(max(0, config.READING_INTERVAL_SECONDS - elapsed))
 
 
 if __name__ == "__main__":
